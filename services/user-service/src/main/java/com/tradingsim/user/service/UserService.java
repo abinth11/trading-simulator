@@ -1,6 +1,8 @@
 package com.tradingsim.user.service;
 
 import com.tradingsim.user.dto.UserDtos.*;
+import com.tradingsim.user.dto.AdminUserDtos.AdminUserResponse;
+import com.tradingsim.user.dto.AdminUserDtos.AdminUserSummaryResponse;
 import com.tradingsim.user.entity.User;
 import com.tradingsim.user.exception.ConflictException;
 import com.tradingsim.user.exception.UnauthorizedException;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -89,6 +92,30 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
         return UserResponse.from(user);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AdminUserResponse> getAdminUsers() {
+        return userRepository.findAllByOrderByCreatedAtDesc()
+                .stream()
+                .map(AdminUserResponse::from)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public AdminUserSummaryResponse getAdminUserSummary() {
+        long totalUsers = userRepository.count();
+        long activeUsers = userRepository.countByIsActiveTrue();
+        long adminUsers = userRepository.countByRole(User.Role.ADMIN);
+        long botUsers = userRepository.countByRole(User.Role.BOT);
+
+        return new AdminUserSummaryResponse(
+                totalUsers,
+                activeUsers,
+                totalUsers - activeUsers,
+                adminUsers,
+                botUsers
+        );
     }
 
     // ── Private helpers ───────────────────────────────────────────

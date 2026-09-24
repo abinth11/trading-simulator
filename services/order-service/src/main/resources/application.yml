@@ -54,10 +54,17 @@ management:
     web:
       exposure:
         include: health, info, prometheus, metrics
+  endpoint:
+    health:
+      show-details: always
   metrics:
     export:
       prometheus:
         enabled: true
+
+market-data:
+  # How often to refresh NSE prices from Yahoo Finance (milliseconds). Default: 5 minutes.
+  refresh-interval-ms: 300000
 
 logging:
   level:

@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -36,4 +37,13 @@ public class EngineController {
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
+
+    public record OrderBookStreamSnapshot(
+            String symbol,
+            BigDecimal bestBid,
+            BigDecimal bestAsk,
+            int buyDepth,
+            int sellDepth,
+            Instant generatedAt
+    ) {}
 }

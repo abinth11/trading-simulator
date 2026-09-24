@@ -10,7 +10,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 
@@ -36,6 +38,7 @@ public class TradeEventPublisher {
      * 3. Publish TradeExecuted to Kafka (Portfolio + Logger consume this)
      * 4. Publish PriceUpdated to Kafka + Redis (Market Data + WS consume this)
      */
+    @Transactional
     public void publish(List<TradeEvent> trades) {
         for (TradeEvent trade : trades) {
             // 1. Persist trade record
@@ -100,7 +103,7 @@ public class TradeEventPublisher {
                 trade.getSymbol(),
                 trade.getPrice(),
                 trade.getQuantity(),
-                trade.getExecutedAt()
+                Timestamp.from(trade.getExecutedAt())
         );
     }
 

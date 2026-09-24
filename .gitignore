@@ -24,3 +24,7 @@ logs/
 
 # Docker volumes (local data)
 infra/data/
+
+# Node / frontend
+node_modules/
+dist/
