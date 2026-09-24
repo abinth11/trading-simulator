@@ -15,9 +15,6 @@
         <module>services/order-service</module>
         <module>services/matching-engine</module>
         <module>services/portfolio-service</module>
-        <module>services/market-data-service</module>
-        <module>services/websocket-gateway</module>
-        <module>services/trading-bots</module>
     </modules>
 
     <parent>

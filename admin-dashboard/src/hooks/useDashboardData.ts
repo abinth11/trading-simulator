@@ -123,7 +123,7 @@ export function useDashboardData() {
             "portfolio-service": portfolioHealth.status
           },
           selectedUser: current.selectedUser
-            ? users.find((user) => user.id === current.selectedUser.id) ?? null
+            ? users.find((user) => user.id === current.selectedUser?.id) ?? null
             : current.lastUpdated
               ? null
               : (users[0] ?? null),
@@ -593,7 +593,7 @@ export function useDashboardData() {
           "portfolio-service": portfolioHealth.status
         },
         selectedUser: current.selectedUser
-          ? users.find((user) => user.id === current.selectedUser.id) ?? null
+          ? users.find((user) => user.id === current.selectedUser?.id) ?? null
           : null,
         pageLoading: false,
         pageError: "",

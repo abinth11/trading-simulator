@@ -90,9 +90,11 @@ class OrderBookTest {
         // Buy 12 — should fill the 100.0 and 100.5 sells (10 total), partial on 101.0
         List<TradeEvent> trades = book.addOrder(order(Side.BUY, 101.0, 12));
 
-        assertThat(trades).hasSize(2); // filled 100.0 sell and 100.5 sell
+        assertThat(trades).hasSize(3); // filled 100.0 and 100.5 sells, partial on 101.0
         assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0");
         assertThat(trades.get(1).getPrice()).isEqualByComparingTo("100.5");
+        assertThat(trades.get(2).getPrice()).isEqualByComparingTo("101.0");
+        assertThat(trades.get(2).getQuantity()).isEqualByComparingTo("2");
         assertThat(book.getSellDepth()).isEqualTo(1); // 101.0 sell remains with 3 qty
     }
 

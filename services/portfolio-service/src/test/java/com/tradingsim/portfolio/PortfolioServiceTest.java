@@ -44,10 +44,21 @@ class PortfolioServiceTest {
         when(holdingRepository.save(any())).thenAnswer(i -> i.getArgument(0));
     }
 
+    // Every trade settles both sides, so buyer-focused tests still need a seller with shares
+    private void givenSellerHolds(String quantity) {
+        when(holdingRepository.findByUserIdAndSymbol(sellerId, "RELIANCE"))
+                .thenReturn(Optional.of(PortfolioHolding.builder()
+                        .userId(sellerId).symbol("RELIANCE")
+                        .quantity(new BigDecimal(quantity))
+                        .avgBuyPrice(new BigDecimal("2700.00"))
+                        .build()));
+    }
+
     @Test
     void processTrade_buyer_getsHoldings() {
         when(holdingRepository.findByUserIdAndSymbol(buyerId, "RELIANCE"))
                 .thenReturn(Optional.empty()); // no existing holding
+        givenSellerHolds("50");
 
         TradeExecutedEvent event = new TradeExecutedEvent(
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
@@ -82,6 +93,7 @@ class PortfolioServiceTest {
 
         when(holdingRepository.findByUserIdAndSymbol(buyerId, "RELIANCE"))
                 .thenReturn(Optional.of(existing));
+        givenSellerHolds("50");
 
         // New trade: buy 10 more @ 2900
         // Expected avg: (10*2800 + 10*2900) / 20 = 2850
@@ -110,6 +122,8 @@ class PortfolioServiceTest {
 
         when(holdingRepository.findByUserIdAndSymbol(sellerId, "RELIANCE"))
                 .thenReturn(Optional.of(holding));
+        when(holdingRepository.findByUserIdAndSymbol(buyerId, "RELIANCE"))
+                .thenReturn(Optional.empty());
 
         TradeExecutedEvent event = new TradeExecutedEvent(
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
