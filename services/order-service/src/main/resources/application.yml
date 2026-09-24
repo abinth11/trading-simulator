@@ -62,6 +62,10 @@ management:
       prometheus:
         enabled: true
 
+trading:
+  # MARKET orders fill no further than this % from the reference price; unfilled remainder is cancelled
+  market-protection-pct: 5
+
 market-data:
   # How often to refresh NSE prices from Yahoo Finance (milliseconds). Default: 5 minutes.
   refresh-interval-ms: 300000

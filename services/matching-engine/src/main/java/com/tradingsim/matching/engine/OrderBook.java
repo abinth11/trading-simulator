@@ -1,6 +1,7 @@
 package com.tradingsim.matching.engine;
 
 import com.tradingsim.matching.model.Order;
+import com.tradingsim.matching.model.Order.OrderType;
 import com.tradingsim.matching.model.Order.Side;
 import com.tradingsim.matching.model.TradeEvent;
 import lombok.Getter;
@@ -56,11 +57,17 @@ public class OrderBook {
      * Returns a list of TradeEvents produced (empty if no match).
      */
     public List<TradeEvent> addOrder(Order order) {
-        log.debug("Adding {} {} order: price={} qty={} id={}",
-                order.getSide(), symbol, order.getPrice(), order.getQuantity(), order.getId());
+        log.debug("Adding {} {} {} order: price={} qty={} id={}",
+                order.getSide(), order.getType(), symbol, order.getPrice(), order.getQuantity(), order.getId());
+
+        List<TradeEvent> trades = new ArrayList<>();
+
+        if (order.getType() == OrderType.MARKET) {
+            matchMarket(order, trades);
+            return trades;
+        }
 
         orderIndex.put(order.getId(), order);
-        List<TradeEvent> trades = new ArrayList<>();
 
         if (order.getSide() == Side.BUY) {
             buyOrders.offer(order);
@@ -109,31 +116,7 @@ public class OrderBook {
                     .min(bestSell.getRemainingQuantity());
 
             // Execute at the sell price (price-time priority convention)
-            BigDecimal execPrice = bestSell.getPrice();
-
-            // Update filled quantities
-            bestBuy.setFilledQuantity(bestBuy.getFilledQuantity().add(fillQty));
-            bestSell.setFilledQuantity(bestSell.getFilledQuantity().add(fillQty));
-
-            // Update order statuses
-            updateStatus(bestBuy);
-            updateStatus(bestSell);
-
-            // Build trade event
-            TradeEvent trade = TradeEvent.builder()
-                    .tradeId(UUID.randomUUID())
-                    .buyOrderId(bestBuy.getId())
-                    .sellOrderId(bestSell.getId())
-                    .buyerId(bestBuy.getUserId())
-                    .sellerId(bestSell.getUserId())
-                    .symbol(symbol)
-                    .price(execPrice)
-                    .quantity(fillQty)
-                    .executedAt(Instant.now())
-                    .build();
-
-            trades.add(trade);
-            log.info("TRADE EXECUTED: {}", trade);
+            trades.add(execute(bestBuy, bestSell, bestSell.getPrice(), fillQty));
 
             // Remove fully filled orders from the book
             if (bestBuy.isFilled()) {
@@ -145,6 +128,67 @@ public class OrderBook {
                 orderIndex.remove(bestSell.getId());
             }
         }
+    }
+
+    /**
+     * MARKET orders are immediate-or-cancel: they sweep the opposite side at each resting
+     * order's price, never rest on the book, and any unfilled remainder is cancelled.
+     * A non-null price is the market-protection cap — the order won't fill beyond it.
+     */
+    private void matchMarket(Order order, List<TradeEvent> trades) {
+        boolean isBuy = order.getSide() == Side.BUY;
+        PriorityQueue<Order> opposite = isBuy ? sellOrders : buyOrders;
+
+        while (!order.isFilled() && !opposite.isEmpty() && withinCap(order, opposite.peek().getPrice())) {
+            Order resting = opposite.peek();
+            BigDecimal fillQty = order.getRemainingQuantity().min(resting.getRemainingQuantity());
+
+            trades.add(isBuy
+                    ? execute(order, resting, resting.getPrice(), fillQty)
+                    : execute(resting, order, resting.getPrice(), fillQty));
+
+            if (resting.isFilled()) {
+                opposite.poll();
+                orderIndex.remove(resting.getId());
+            }
+        }
+
+        if (!order.isFilled()) {
+            order.setStatus(Order.OrderStatus.CANCELLED);
+            log.debug("MARKET order {} expired with {} unfilled", order.getId(), order.getRemainingQuantity());
+        }
+    }
+
+    private boolean withinCap(Order marketOrder, BigDecimal restingPrice) {
+        BigDecimal cap = marketOrder.getPrice();
+        if (cap == null) return true;
+        return marketOrder.getSide() == Side.BUY
+                ? restingPrice.compareTo(cap) <= 0
+                : restingPrice.compareTo(cap) >= 0;
+    }
+
+    /** Fills both orders by fillQty at execPrice and returns the resulting trade. */
+    private TradeEvent execute(Order buy, Order sell, BigDecimal execPrice, BigDecimal fillQty) {
+        buy.setFilledQuantity(buy.getFilledQuantity().add(fillQty));
+        sell.setFilledQuantity(sell.getFilledQuantity().add(fillQty));
+
+        updateStatus(buy);
+        updateStatus(sell);
+
+        TradeEvent trade = TradeEvent.builder()
+                .tradeId(UUID.randomUUID())
+                .buyOrderId(buy.getId())
+                .sellOrderId(sell.getId())
+                .buyerId(buy.getUserId())
+                .sellerId(sell.getUserId())
+                .symbol(symbol)
+                .price(execPrice)
+                .quantity(fillQty)
+                .executedAt(Instant.now())
+                .build();
+
+        log.info("TRADE EXECUTED: {}", trade);
+        return trade;
     }
 
     /**

@@ -9,11 +9,11 @@ import org.springframework.context.annotation.Configuration;
 public class MatchingEngineConfig {
 
     /**
-     * Wires the TradeEventPublisher as the trade event handler for the router.
-     * The router passes this Consumer to each SymbolEngine it creates.
+     * Wires the TradeEventPublisher as the event handler for the router.
+     * The router passes it to each SymbolEngine it creates.
      */
     @Bean
     public MatchingEngineRouter matchingEngineRouter(TradeEventPublisher publisher) {
-        return new MatchingEngineRouter(publisher::publish);
+        return new MatchingEngineRouter(publisher);
     }
 }

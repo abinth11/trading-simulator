@@ -11,11 +11,13 @@ import com.tradingsim.order.exception.ValidationException;
 import com.tradingsim.order.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -29,18 +31,31 @@ public class OrderService {
     private final OrderEventPublisher eventPublisher;
     private final StringRedisTemplate redisTemplate;
     private final BalanceService balanceService;
+    private final ReferencePriceService referencePriceService;
+
+    // MARKET orders may not fill further than this from the reference price (NSE-style market protection)
+    @Value("${trading.market-protection-pct:5}")
+    private BigDecimal marketProtectionPct;
 
     // ── Place order ───────────────────────────────────────────────
     @Transactional
     public OrderResponse placeOrder(PlaceOrderRequest req, UUID userId) {
-        // 1. Validate LIMIT order has a price
+        // 1. Validate price against order type
         if (req.getOrderType() == OrderType.LIMIT && req.getPrice() == null) {
             throw new ValidationException("Price is required for LIMIT orders");
         }
+        if (req.getOrderType() == OrderType.MARKET && req.getPrice() != null) {
+            throw new ValidationException("Price must not be set for MARKET orders");
+        }
+
+        // Worst price this order may execute at: the limit price, or the protection cap for MARKET
+        BigDecimal priceCap = req.getOrderType() == OrderType.LIMIT
+                ? req.getPrice()
+                : marketProtectionCap(req.getSymbol().toUpperCase(), req.getSide());
 
         // 2. Balance check for BUY orders
         if (req.getSide() == Side.BUY) {
-            BigDecimal required = req.getPrice().multiply(req.getQuantity());
+            BigDecimal required = priceCap.multiply(req.getQuantity());
             BigDecimal available = balanceService.getCashBalance(userId);
             if (available.compareTo(required) < 0) {
                 throw new InsufficientBalanceException(
@@ -73,14 +88,15 @@ public class OrderService {
         log.info("Order placed: {} {} {} @ {} qty={}", order.getId(), order.getSide(),
                 order.getSymbol(), order.getPrice(), order.getQuantity());
 
-        // 5. Publish OrderPlaced event → Matching Engine picks this up
+        // 5. Publish OrderPlaced event → Matching Engine picks this up.
+        //    MARKET orders carry their protection cap as the price so the engine never fills beyond it.
         eventPublisher.publishOrderPlaced(new OrderPlacedEvent(
                 order.getId(),
                 order.getUserId(),
                 order.getSymbol(),
                 order.getSide().name(),
                 order.getOrderType().name(),
-                order.getPrice(),
+                priceCap,
                 order.getQuantity(),
                 Instant.now()
         ));
@@ -125,5 +141,17 @@ public class OrderService {
                 .stream()
                 .map(OrderResponse::from)
                 .toList();
+    }
+
+    // ── Private helpers ───────────────────────────────────────────
+    private BigDecimal marketProtectionCap(String symbol, Side side) {
+        BigDecimal reference = referencePriceService.resolve(symbol);
+        BigDecimal band = marketProtectionPct.movePointLeft(2);
+
+        // Round away from the reference so the cap never tightens below the configured band
+        return side == Side.BUY
+                ? reference.multiply(BigDecimal.ONE.add(band)).setScale(2, RoundingMode.CEILING)
+                : reference.multiply(BigDecimal.ONE.subtract(band)).setScale(2, RoundingMode.FLOOR)
+                        .max(new BigDecimal("0.01"));
     }
 }

@@ -157,4 +157,86 @@ class OrderBookTest {
         assertThat(book.getBestAskPrice()).hasValueSatisfying(p ->
                 assertThat(p).isEqualByComparingTo("101.0"));
     }
+
+    // ── MARKET orders (immediate-or-cancel) ───────────────────────
+    private Order marketOrder(Side side, double qty, Double cap) {
+        Order order = order(side, 0, qty);
+        order.setType(OrderType.MARKET);
+        order.setPrice(cap == null ? null : BigDecimal.valueOf(cap));
+        return order;
+    }
+
+    @Test
+    void marketBuy_sweepsLevelsAtRestingPrices() {
+        book.addOrder(order(Side.SELL, 100.0, 5));
+        book.addOrder(order(Side.SELL, 101.0, 5));
+        Order buy = marketOrder(Side.BUY, 8, null);
+
+        List<TradeEvent> trades = book.addOrder(buy);
+
+        assertThat(trades).hasSize(2);
+        assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0");
+        assertThat(trades.get(1).getPrice()).isEqualByComparingTo("101.0");
+        assertThat(trades.get(1).getQuantity()).isEqualByComparingTo("3");
+        assertThat(buy.getStatus()).isEqualTo(OrderStatus.FILLED);
+        assertThat(book.getSellDepth()).isEqualTo(1); // 101.0 sell keeps 2
+        assertThat(book.getBuyDepth()).isZero();      // market order never rests
+    }
+
+    @Test
+    void marketBuy_withNoLiquidity_isCancelledWithoutTrades() {
+        Order buy = marketOrder(Side.BUY, 10, null);
+
+        List<TradeEvent> trades = book.addOrder(buy);
+
+        assertThat(trades).isEmpty();
+        assertThat(buy.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(book.getBuyDepth()).isZero();
+    }
+
+    @Test
+    void marketBuy_partialFill_cancelsRemainder() {
+        book.addOrder(order(Side.SELL, 100.0, 4));
+        Order buy = marketOrder(Side.BUY, 10, null);
+
+        List<TradeEvent> trades = book.addOrder(buy);
+
+        assertThat(trades).hasSize(1);
+        assertThat(buy.getFilledQuantity()).isEqualByComparingTo("4");
+        assertThat(buy.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(book.getBuyDepth()).isZero();
+        assertThat(book.getSellDepth()).isZero();
+    }
+
+    @Test
+    void marketBuy_stopsAtProtectionCap() {
+        book.addOrder(order(Side.SELL, 100.0, 5));
+        book.addOrder(order(Side.SELL, 110.0, 5)); // beyond the cap
+        Order buy = marketOrder(Side.BUY, 10, 105.0);
+
+        List<TradeEvent> trades = book.addOrder(buy);
+
+        assertThat(trades).hasSize(1);
+        assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0");
+        assertThat(buy.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(book.getBestAskPrice()).hasValueSatisfying(p ->
+                assertThat(p).isEqualByComparingTo("110.0"));
+    }
+
+    @Test
+    void marketSell_fillsAgainstBestBidsAndRespectsCap() {
+        book.addOrder(order(Side.BUY, 100.0, 5));
+        book.addOrder(order(Side.BUY, 99.0, 5));
+        book.addOrder(order(Side.BUY, 90.0, 5)); // below the cap
+        Order sell = marketOrder(Side.SELL, 15, 95.0);
+
+        List<TradeEvent> trades = book.addOrder(sell);
+
+        assertThat(trades).extracting(TradeEvent::getPrice)
+                .usingElementComparator(BigDecimal::compareTo)
+                .containsExactly(new BigDecimal("100.0"), new BigDecimal("99.0"));
+        assertThat(sell.getFilledQuantity()).isEqualByComparingTo("10");
+        assertThat(sell.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(book.getBuyDepth()).isEqualTo(1);
+    }
 }

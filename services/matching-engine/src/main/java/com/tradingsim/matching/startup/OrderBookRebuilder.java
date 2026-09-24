@@ -42,6 +42,7 @@ public class OrderBookRebuilder implements ApplicationRunner {
                        quantity, filled_quantity, status, created_at
                 FROM orders
                 WHERE status IN ('PENDING', 'PARTIAL')
+                  AND order_type = 'LIMIT' -- MARKET orders are immediate-or-cancel and never rest
                 ORDER BY created_at ASC
                 """,
                 rs -> {

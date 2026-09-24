@@ -1,23 +1,21 @@
 package com.tradingsim.matching.engine;
 
 import com.tradingsim.matching.model.Order;
-import com.tradingsim.matching.model.TradeEvent;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 @Slf4j
 public class MatchingEngineRouter {
 
     private final ConcurrentHashMap<String, SymbolEngine> engines = new ConcurrentHashMap<>();
-    private final Consumer<List<TradeEvent>> tradeEventPublisher;
+    private final EngineEventHandler eventHandler;
 
-    public MatchingEngineRouter(Consumer<List<TradeEvent>> tradeEventPublisher) {
-        this.tradeEventPublisher = tradeEventPublisher;
+    public MatchingEngineRouter(EngineEventHandler eventHandler) {
+        this.eventHandler = eventHandler;
     }
 
     @PostConstruct
@@ -55,7 +53,7 @@ public class MatchingEngineRouter {
     private SymbolEngine getOrCreateEngine(String symbol) {
         return engines.computeIfAbsent(symbol, s -> {
             log.info("Creating new SymbolEngine for: {}", s);
-            SymbolEngine engine = new SymbolEngine(s, tradeEventPublisher);
+            SymbolEngine engine = new SymbolEngine(s, eventHandler);
             Thread.ofVirtual().name("engine-" + s).start(engine);
             return engine;
         });

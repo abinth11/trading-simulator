@@ -1,5 +1,7 @@
 package com.tradingsim.matching.publisher;
 
+import com.tradingsim.matching.engine.EngineEventHandler;
+import com.tradingsim.matching.model.Order;
 import com.tradingsim.matching.model.TradeEvent;
 import com.tradingsim.matching.publisher.EngineEvents.PriceUpdatedEvent;
 import com.tradingsim.matching.publisher.EngineEvents.TradeExecutedEvent;
@@ -19,7 +21,7 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class TradeEventPublisher {
+public class TradeEventPublisher implements EngineEventHandler {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final StringRedisTemplate redisTemplate;
@@ -38,8 +40,9 @@ public class TradeEventPublisher {
      * 3. Publish TradeExecuted to Kafka (Portfolio + Logger consume this)
      * 4. Publish PriceUpdated to Kafka + Redis (Market Data + WS consume this)
      */
+    @Override
     @Transactional
-    public void publish(List<TradeEvent> trades) {
+    public void onTrades(List<TradeEvent> trades) {
         for (TradeEvent trade : trades) {
             // 1. Persist trade record
             persistTrade(trade);
@@ -87,6 +90,23 @@ public class TradeEventPublisher {
             log.info("Trade published: {} {} @ {} qty={}",
                     trade.getTradeId(), trade.getSymbol(), trade.getPrice(), trade.getQuantity());
         }
+    }
+
+    /**
+     * MARKET orders are immediate-or-cancel: whatever the engine could not fill is cancelled.
+     * filled_quantity is left as-is, so a partly filled MARKET order shows how much executed.
+     */
+    @Override
+    public void onOrderExpired(Order order) {
+        jdbcTemplate.update("""
+                UPDATE orders
+                SET status = 'CANCELLED',
+                    updated_at = NOW()
+                WHERE id = ? AND status IN ('PENDING', 'PARTIAL')
+                """, order.getId());
+
+        log.info("MARKET order {} expired: filled {} of {}",
+                order.getId(), order.getFilledQuantity(), order.getQuantity());
     }
 
     private void persistTrade(TradeEvent trade) {

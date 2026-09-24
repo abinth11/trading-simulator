@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.function.Consumer;
 
 /**
  * SymbolEngine wraps an OrderBook and processes orders on a single dedicated thread.
@@ -27,14 +26,14 @@ public class SymbolEngine implements Runnable {
     private final String symbol;
     private final OrderBook orderBook;
     private final BlockingQueue<EngineCommand> commandQueue;
-    private final Consumer<List<TradeEvent>> tradeEventHandler;
+    private final EngineEventHandler eventHandler;
     private volatile boolean running = true;
 
-    public SymbolEngine(String symbol, Consumer<List<TradeEvent>> tradeEventHandler) {
+    public SymbolEngine(String symbol, EngineEventHandler eventHandler) {
         this.symbol = symbol;
         this.orderBook = new OrderBook(symbol);
         this.commandQueue = new LinkedBlockingQueue<>();
-        this.tradeEventHandler = tradeEventHandler;
+        this.eventHandler = eventHandler;
     }
 
     // ── Public API (called from other threads) ────────────────────
@@ -72,9 +71,14 @@ public class SymbolEngine implements Runnable {
                 }
 
                 if (cmd instanceof EngineCommand.AddOrder addCmd) {
-                    List<TradeEvent> trades = orderBook.addOrder(addCmd.order());
+                    Order order = addCmd.order();
+                    List<TradeEvent> trades = orderBook.addOrder(order);
                     if (!trades.isEmpty()) {
-                        tradeEventHandler.accept(trades); // publish to event bus
+                        eventHandler.onTrades(trades); // publish to event bus
+                    }
+                    // Trades are published first so the fills land before the remainder is cancelled
+                    if (order.getStatus() == Order.OrderStatus.CANCELLED) {
+                        eventHandler.onOrderExpired(order);
                     }
                 }
 

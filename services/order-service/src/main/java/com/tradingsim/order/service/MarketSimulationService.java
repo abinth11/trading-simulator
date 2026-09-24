@@ -8,7 +8,6 @@ import com.tradingsim.order.entity.Order.Side;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -54,6 +53,7 @@ public class MarketSimulationService {
     private final JdbcTemplate jdbcTemplate;
     private final StringRedisTemplate redisTemplate;
     private final NseMarketDataService nseMarketDataService;
+    private final ReferencePriceService referencePriceService;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final AtomicReference<ScheduledFuture<?>> runningTask = new AtomicReference<>();
@@ -151,7 +151,7 @@ public class MarketSimulationService {
 
         for (int i = 0; i < config.ordersPerTick(); i += 2) {
             String symbol = randomSymbol(config.symbols());
-            BigDecimal referencePrice = resolveReferencePrice(symbol);
+            BigDecimal referencePrice = referencePriceService.resolve(symbol);
             BigDecimal midpoint = movePrice(referencePrice);
             BigDecimal priceStep = midpoint.multiply(randomBetween("0.0002", "0.0008")).setScale(2, RoundingMode.HALF_UP);
             BigDecimal sellPrice = midpoint.subtract(priceStep).max(new BigDecimal("0.01")).setScale(2, RoundingMode.HALF_UP);
@@ -253,39 +253,6 @@ public class MarketSimulationService {
             bots.add(new BotSeed(botId, "bot", "bot"));
         }
         return bots;
-    }
-
-    private BigDecimal resolveReferencePrice(String symbol) {
-        String cachedPrice = redisTemplate.opsForValue().get("price:last:" + symbol);
-        if (cachedPrice != null) {
-            return new BigDecimal(cachedPrice);
-        }
-
-        try {
-            BigDecimal tradePrice = jdbcTemplate.queryForObject(
-                    "SELECT price FROM trades WHERE symbol = ? ORDER BY executed_at DESC LIMIT 1",
-                    BigDecimal.class,
-                    symbol
-            );
-            if (tradePrice != null) {
-                return tradePrice;
-            }
-        } catch (DataAccessException ignored) {
-        }
-
-        try {
-            BigDecimal orderPrice = jdbcTemplate.queryForObject(
-                    "SELECT price FROM orders WHERE symbol = ? AND price IS NOT NULL ORDER BY updated_at DESC LIMIT 1",
-                    BigDecimal.class,
-                    symbol
-            );
-            if (orderPrice != null) {
-                return orderPrice;
-            }
-        } catch (DataAccessException ignored) {
-        }
-
-        return nseMarketDataService.getBootstrapPrice(symbol);
     }
 
     private static SimulationConfig normalize(StartMarketSimulationRequest request, List<String> defaultSymbols) {
