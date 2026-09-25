@@ -11,7 +11,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
@@ -29,7 +28,6 @@ class PortfolioServiceTest {
     @Mock PortfolioHoldingRepository holdingRepository;
     @Mock JdbcTemplate jdbcTemplate;
     @Mock StringRedisTemplate redisTemplate;
-    @Mock ValueOperations<String, String> valueOps;
 
     @InjectMocks PortfolioService portfolioService;
 
@@ -38,10 +36,14 @@ class PortfolioServiceTest {
 
     @BeforeEach
     void setUp() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOps);
-        when(jdbcTemplate.queryForObject(anyString(), eq(BigDecimal.class), any()))
-                .thenReturn(new BigDecimal("100000.00"));
-        when(holdingRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        givenSettlementIsNew(true);
+        lenient().when(holdingRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+    }
+
+    // Lenient: the other jdbcTemplate.update calls (cash changes) use different arguments
+    private void givenSettlementIsNew(boolean isNew) {
+        lenient().when(jdbcTemplate.update(contains("trade_settlements"), any(UUID.class)))
+                .thenReturn(isNew ? 1 : 0);
     }
 
     // Every trade settles both sides, so buyer-focused tests still need a seller with shares
@@ -144,5 +146,22 @@ class PortfolioServiceTest {
                 contains("cash_balance = cash_balance +"),
                 eq(new BigDecimal("14500.00")), eq(sellerId)
         );
+    }
+
+    @Test
+    void processTrade_alreadySettled_isSkipped() {
+        givenSettlementIsNew(false); // Kafka redelivered a trade we already applied
+
+        TradeExecutedEvent event = new TradeExecutedEvent(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                buyerId, sellerId, "RELIANCE",
+                new BigDecimal("2900.00"), new BigDecimal("5"),
+                Instant.now()
+        );
+
+        portfolioService.processTrade(event);
+
+        verify(jdbcTemplate, never()).update(contains("cash_balance"), any(BigDecimal.class), any(UUID.class));
+        verifyNoInteractions(holdingRepository);
     }
 }

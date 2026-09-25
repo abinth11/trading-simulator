@@ -12,7 +12,6 @@ import com.tradingsim.order.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +28,6 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final OrderEventPublisher eventPublisher;
-    private final StringRedisTemplate redisTemplate;
     private final BalanceService balanceService;
     private final ReferencePriceService referencePriceService;
 
@@ -48,15 +46,22 @@ public class OrderService {
             throw new ValidationException("Price must not be set for MARKET orders");
         }
 
-        // Worst price this order may execute at: the limit price, or the protection cap for MARKET
+        String symbol = req.getSymbol().toUpperCase();
+
+        // Worst price this order may execute at: the limit price, or the protection cap for MARKET.
+        // Stored on the order so open BUY orders reserve remaining qty x price cap of cash.
         BigDecimal priceCap = req.getOrderType() == OrderType.LIMIT
                 ? req.getPrice()
-                : marketProtectionCap(req.getSymbol().toUpperCase(), req.getSide());
+                : marketProtectionCap(symbol, req.getSide());
 
-        // 2. Balance check for BUY orders
+        // Check against what is not already committed to open orders or unsettled trades.
+        // The lock makes concurrent orders from this user wait, so they can't both spend the same funds.
+        balanceService.lockAccount(userId);
+
+        // 2. BUY orders: available cash must cover the worst-case cost
         if (req.getSide() == Side.BUY) {
             BigDecimal required = priceCap.multiply(req.getQuantity());
-            BigDecimal available = balanceService.getCashBalance(userId);
+            BigDecimal available = balanceService.getAvailableCash(userId);
             if (available.compareTo(required) < 0) {
                 throw new InsufficientBalanceException(
                         String.format("Insufficient balance. Required: %.2f, Available: %.2f",
@@ -64,23 +69,24 @@ public class OrderService {
             }
         }
 
-        // 3. SELL orders: check holdings (basic check via Redis cache)
+        // 3. SELL orders: available shares must cover the quantity
         if (req.getSide() == Side.SELL) {
-            BigDecimal holdings = balanceService.getHoldings(userId, req.getSymbol());
-            if (holdings.compareTo(req.getQuantity()) < 0) {
+            BigDecimal available = balanceService.getAvailableHoldings(userId, symbol);
+            if (available.compareTo(req.getQuantity()) < 0) {
                 throw new InsufficientBalanceException(
                         String.format("Insufficient holdings. Required: %s, Available: %s",
-                                req.getQuantity(), holdings));
+                                req.getQuantity(), available));
             }
         }
 
         // 4. Persist order with PENDING status
         Order order = Order.builder()
                 .userId(userId)
-                .symbol(req.getSymbol().toUpperCase())
+                .symbol(symbol)
                 .side(req.getSide())
                 .orderType(req.getOrderType())
                 .price(req.getPrice())
+                .priceCap(priceCap)
                 .quantity(req.getQuantity())
                 .build();
 

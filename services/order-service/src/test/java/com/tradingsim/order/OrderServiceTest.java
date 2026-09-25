@@ -3,6 +3,7 @@ package com.tradingsim.order;
 import com.tradingsim.order.config.OrderEventPublisher;
 import com.tradingsim.order.config.OrderEventPublisher.OrderPlacedEvent;
 import com.tradingsim.order.dto.OrderDtos.PlaceOrderRequest;
+import com.tradingsim.order.entity.Order;
 import com.tradingsim.order.entity.Order.OrderType;
 import com.tradingsim.order.entity.Order.Side;
 import com.tradingsim.order.exception.InsufficientBalanceException;
@@ -66,20 +67,38 @@ class OrderServiceTest {
     @Test
     void marketBuy_isCheckedAndSentWithProtectionCap() {
         when(referencePriceService.resolve("INFY")).thenReturn(new BigDecimal("1000.00"));
-        when(balanceService.getCashBalance(userId)).thenReturn(new BigDecimal("100000.00"));
+        when(balanceService.getAvailableCash(userId)).thenReturn(new BigDecimal("100000.00"));
         when(orderRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         var response = orderService.placeOrder(request(Side.BUY, OrderType.MARKET, null, "10"), userId);
 
         assertThat(response.getPrice()).isNull(); // stored as a MARKET order, no limit price
         assertThat(publishedEvent().price()).isEqualByComparingTo("1050.00"); // reference + 5%
+
+        // The cap is persisted so the open order reserves 10 x 1050 of cash
+        var saved = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(saved.capture());
+        assertThat(saved.getValue().getPriceCap()).isEqualByComparingTo("1050.00");
+    }
+
+    @Test
+    void placeOrder_locksAccountBeforeCheckingFunds() {
+        when(balanceService.getAvailableCash(userId)).thenReturn(new BigDecimal("100000.00"));
+        when(orderRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        orderService.placeOrder(request(Side.BUY, OrderType.LIMIT, "100", "1"), userId);
+
+        var inOrder = inOrder(balanceService, orderRepository);
+        inOrder.verify(balanceService).lockAccount(userId);
+        inOrder.verify(balanceService).getAvailableCash(userId);
+        inOrder.verify(orderRepository).save(any());
     }
 
     @Test
     void marketBuy_rejectedWhenCashCannotCoverCap() {
         when(referencePriceService.resolve("INFY")).thenReturn(new BigDecimal("1000.00"));
         // 10 x 1050 cap = 10,500 needed; 10,000 covers the reference price but not the cap
-        when(balanceService.getCashBalance(userId)).thenReturn(new BigDecimal("10000.00"));
+        when(balanceService.getAvailableCash(userId)).thenReturn(new BigDecimal("10000.00"));
 
         assertThatThrownBy(() -> orderService.placeOrder(request(Side.BUY, OrderType.MARKET, null, "10"), userId))
                 .isInstanceOf(InsufficientBalanceException.class);
@@ -89,7 +108,7 @@ class OrderServiceTest {
     @Test
     void marketSell_capIsBelowReference() {
         when(referencePriceService.resolve("INFY")).thenReturn(new BigDecimal("1000.00"));
-        when(balanceService.getHoldings(userId, "infy")).thenReturn(new BigDecimal("10"));
+        when(balanceService.getAvailableHoldings(userId, "INFY")).thenReturn(new BigDecimal("10"));
         when(orderRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         orderService.placeOrder(request(Side.SELL, OrderType.MARKET, null, "10"), userId);
@@ -113,7 +132,7 @@ class OrderServiceTest {
 
     @Test
     void limitBuy_usesLimitPrice() {
-        when(balanceService.getCashBalance(userId)).thenReturn(new BigDecimal("100000.00"));
+        when(balanceService.getAvailableCash(userId)).thenReturn(new BigDecimal("100000.00"));
         when(orderRepository.save(any())).thenAnswer(i -> i.getArgument(0));
 
         orderService.placeOrder(request(Side.BUY, OrderType.LIMIT, "1234.50", "2"), userId);

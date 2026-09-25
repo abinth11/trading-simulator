@@ -48,9 +48,12 @@ public class OrderEventConsumer {
         router.submitOrder(order);
     }
 
+    // Messages carry no type headers, and the consumer default type is OrderPlacedEvent,
+    // so this listener must name its own payload type or every cancel fails to convert.
     @KafkaListener(
             topics = "${kafka.topics.order-cancelled}",
-            groupId = "matching-engine-group"
+            groupId = "matching-engine-group",
+            properties = "spring.json.value.default.type=com.tradingsim.matching.consumer.OrderCancelledEvent"
     )
     public void onOrderCancelled(OrderCancelledEvent event) {
         log.info("Received OrderCancelled: {} symbol={}", event.getOrderId(), event.getSymbol());

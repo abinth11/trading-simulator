@@ -39,6 +39,10 @@ public class Order {
     @Column(precision = 18, scale = 2)
     private BigDecimal price;
 
+    // Worst price this order may execute at — limit price, or the protection cap for MARKET orders
+    @Column(name = "price_cap", precision = 18, scale = 2)
+    private BigDecimal priceCap;
+
     @Column(nullable = false, precision = 18, scale = 6)
     private BigDecimal quantity;
 

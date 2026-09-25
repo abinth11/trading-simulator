@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS orders (
     side            VARCHAR(4) NOT NULL,                 -- BUY | SELL
     order_type      VARCHAR(10) NOT NULL DEFAULT 'LIMIT',-- LIMIT | MARKET
     price           DECIMAL(18, 2),                      -- NULL for market orders
+    price_cap       DECIMAL(18, 2),                      -- worst fill price: limit price, or MARKET protection cap
     quantity        DECIMAL(18, 6) NOT NULL,
     filled_quantity DECIMAL(18, 6) NOT NULL DEFAULT 0,
     status          VARCHAR(10) NOT NULL DEFAULT 'PENDING', -- PENDING | PARTIAL | FILLED | CANCELLED | REJECTED
@@ -38,6 +39,8 @@ CREATE INDEX IF NOT EXISTS idx_orders_user_id  ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_symbol   ON orders(symbol);
 CREATE INDEX IF NOT EXISTS idx_orders_status   ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created  ON orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_open_by_user
+    ON orders(user_id, side, symbol) WHERE status IN ('PENDING', 'PARTIAL');
 
 -- ── TRADES ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trades (
@@ -56,6 +59,14 @@ CREATE INDEX IF NOT EXISTS idx_trades_symbol      ON trades(symbol);
 CREATE INDEX IF NOT EXISTS idx_trades_buyer_id    ON trades(buyer_id);
 CREATE INDEX IF NOT EXISTS idx_trades_seller_id   ON trades(seller_id);
 CREATE INDEX IF NOT EXISTS idx_trades_executed_at ON trades(executed_at DESC);
+
+-- ── TRADE SETTLEMENTS ──────────────────────────────────────────────
+-- One row per trade portfolio-service has applied to cash and holdings.
+-- Trades without a row are unsettled and still count against available balance.
+CREATE TABLE IF NOT EXISTS trade_settlements (
+    trade_id   UUID PRIMARY KEY,
+    settled_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- ── PORTFOLIO HOLDINGS ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS portfolio_holdings (

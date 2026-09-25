@@ -1,70 +1,80 @@
 package com.tradingsim.order.service;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Reads cash balance and holdings for order validation.
+ * Computes what a user can still commit to new orders.
  *
- * Strategy (fast path first):
- *   1. Try Redis cache (written by Portfolio Service on every trade)
- *   2. Fall back to direct DB read if cache miss
+ * Nothing is stored as "reserved" — it is derived from the order and trade tables:
  *
- * This avoids a synchronous HTTP call to Portfolio Service,
- * keeping the order placement path fast and decoupled.
+ *   available cash   = cash_balance
+ *                      − Σ open BUY orders   (remaining qty × price cap)
+ *                      − Σ unsettled BUY trades (price × qty)
+ *
+ *   available shares = holding quantity
+ *                      − Σ open SELL orders  (remaining qty)
+ *                      − Σ unsettled SELL trades (qty)
+ *
+ * A fill moves value from "open order" to "unsettled trade" (engine transaction), and settlement
+ * moves it from "unsettled trade" into cash_balance / holdings (portfolio transaction). Each step
+ * is atomic, so the reservation is always consistent and needs no release bookkeeping.
+ *
+ * Callers must hold {@link #lockAccount} for the duration of their transaction so concurrent
+ * orders from the same user are checked one at a time.
  */
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class BalanceService {
 
-    private final StringRedisTemplate redisTemplate;
     private final JdbcTemplate jdbcTemplate;
 
-    private static final String CASH_KEY   = "balance:cash:%s";       // balance:cash:{userId}
-    private static final String HOLDING_KEY = "balance:holding:%s:%s"; // balance:holding:{userId}:{symbol}
-
-    public BigDecimal getCashBalance(UUID userId) {
-        // Fast path: Redis
-        String cached = redisTemplate.opsForValue().get(String.format(CASH_KEY, userId));
-        if (cached != null) {
-            log.debug("Cache hit for cash balance: {}", userId);
-            return new BigDecimal(cached);
-        }
-
-        // Fallback: DB
-        log.debug("Cache miss for cash balance, reading from DB: {}", userId);
-        BigDecimal balance = jdbcTemplate.queryForObject(
-                "SELECT cash_balance FROM users WHERE id = ?",
-                BigDecimal.class, userId);
-
-        return balance != null ? balance : BigDecimal.ZERO;
+    /** Serialises order placement per user until the surrounding transaction ends. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockAccount(UUID userId) {
+        jdbcTemplate.queryForObject("SELECT id FROM users WHERE id = ? FOR UPDATE", UUID.class, userId);
     }
 
-    public BigDecimal getHoldings(UUID userId, String symbol) {
-        // Fast path: Redis
-        String cached = redisTemplate.opsForValue()
-                .get(String.format(HOLDING_KEY, userId, symbol.toUpperCase()));
-        if (cached != null) {
-            log.debug("Cache hit for holdings: {} {}", userId, symbol);
-            return new BigDecimal(cached);
-        }
+    public BigDecimal getAvailableCash(UUID userId) {
+        BigDecimal available = jdbcTemplate.queryForObject("""
+                SELECT u.cash_balance
+                     - COALESCE((SELECT SUM(COALESCE(o.price_cap, o.price) * (o.quantity - o.filled_quantity))
+                                 FROM orders o
+                                 WHERE o.user_id = u.id AND o.side = 'BUY'
+                                   AND o.status IN ('PENDING', 'PARTIAL')), 0)
+                     - COALESCE((SELECT SUM(t.price * t.quantity)
+                                 FROM trades t
+                                 WHERE t.buyer_id = u.id
+                                   AND NOT EXISTS (SELECT 1 FROM trade_settlements s WHERE s.trade_id = t.id)), 0)
+                FROM users u
+                WHERE u.id = ?
+                """, BigDecimal.class, userId);
 
-        // Fallback: DB
-        log.debug("Cache miss for holdings, reading from DB: {} {}", userId, symbol);
-        try {
-            BigDecimal qty = jdbcTemplate.queryForObject(
-                    "SELECT quantity FROM portfolio_holdings WHERE user_id = ? AND symbol = ?",
-                    BigDecimal.class, userId, symbol.toUpperCase());
-            return qty != null ? qty : BigDecimal.ZERO;
-        } catch (Exception e) {
-            return BigDecimal.ZERO; // no holdings yet
-        }
+        return available != null ? available : BigDecimal.ZERO;
+    }
+
+    public BigDecimal getAvailableHoldings(UUID userId, String symbol) {
+        BigDecimal available = jdbcTemplate.queryForObject("""
+                SELECT COALESCE((SELECT h.quantity
+                                 FROM portfolio_holdings h
+                                 WHERE h.user_id = ? AND h.symbol = ?), 0)
+                     - COALESCE((SELECT SUM(o.quantity - o.filled_quantity)
+                                 FROM orders o
+                                 WHERE o.user_id = ? AND o.symbol = ? AND o.side = 'SELL'
+                                   AND o.status IN ('PENDING', 'PARTIAL')), 0)
+                     - COALESCE((SELECT SUM(t.quantity)
+                                 FROM trades t
+                                 WHERE t.seller_id = ? AND t.symbol = ?
+                                   AND NOT EXISTS (SELECT 1 FROM trade_settlements s WHERE s.trade_id = t.id)), 0)
+                """, BigDecimal.class,
+                userId, symbol, userId, symbol, userId, symbol);
+
+        return available != null ? available : BigDecimal.ZERO;
     }
 }

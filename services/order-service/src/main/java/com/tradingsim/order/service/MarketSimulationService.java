@@ -8,14 +8,12 @@ import com.tradingsim.order.entity.Order.Side;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -51,7 +49,6 @@ public class MarketSimulationService {
 
     private final OrderService orderService;
     private final JdbcTemplate jdbcTemplate;
-    private final StringRedisTemplate redisTemplate;
     private final NseMarketDataService nseMarketDataService;
     private final ReferencePriceService referencePriceService;
 
@@ -144,10 +141,8 @@ public class MarketSimulationService {
 
     private void runTick() {
         SimulationConfig config = currentConfig.get();
-        List<BotSeed> bots = getAvailableBots();
-        if (bots.size() < 2) {
-            throw new IllegalStateException("At least two bot users are required for simulation.");
-        }
+        // Only the bots bootstrapBots() funded — other BOT users may have no cash or holdings
+        List<BotSeed> bots = BOT_SEEDS;
 
         for (int i = 0; i < config.ordersPerTick(); i += 2) {
             String symbol = randomSymbol(config.symbols());
@@ -215,17 +210,7 @@ public class MarketSimulationService {
                             updated_at = NOW()
                         """,
                         UUID.randomUUID(), bot.id(), symbol, DEFAULT_HOLDING_QTY, avgPrice);
-
-                redisTemplate.opsForValue().set(
-                        String.format("balance:holding:%s:%s", bot.id(), symbol),
-                        DEFAULT_HOLDING_QTY.toPlainString()
-                );
             }
-
-            redisTemplate.opsForValue().set(
-                    String.format("balance:cash:%s", bot.id()),
-                    DEFAULT_CASH_BALANCE.toPlainString()
-            );
         }
 
         // Prewarm the matching engine: place one buy+sell pair per symbol so all order
@@ -240,19 +225,6 @@ public class MarketSimulationService {
             submitOrder(seller.id(), symbol, Side.SELL, ref.subtract(step), new BigDecimal("1.000000"));
         }
         log.info("Prewarmed {} order books in the matching engine", symbols.size());
-    }
-
-    private List<BotSeed> getAvailableBots() {
-        List<UUID> activeBotIds = jdbcTemplate.queryForList(
-                "SELECT id FROM users WHERE role = 'BOT' AND is_active = TRUE ORDER BY created_at ASC",
-                UUID.class
-        );
-
-        List<BotSeed> bots = new ArrayList<>();
-        for (UUID botId : activeBotIds) {
-            bots.add(new BotSeed(botId, "bot", "bot"));
-        }
-        return bots;
     }
 
     private static SimulationConfig normalize(StartMarketSimulationRequest request, List<String> defaultSymbols) {

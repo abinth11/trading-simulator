@@ -25,12 +25,19 @@ public class PortfolioService {
     private final JdbcTemplate jdbcTemplate;
     private final StringRedisTemplate redisTemplate;
 
-    private static final String CASH_KEY    = "balance:cash:%s";
-    private static final String HOLDING_KEY = "balance:holding:%s:%s";
-
     // ── Process a trade — called by Kafka consumer ─────────────────
     @Transactional
     public void processTrade(TradeExecutedEvent event) {
+        // Record the settlement first: it makes redelivery a no-op, and it tells order-service
+        // this trade's value has moved into cash/holdings and no longer counts as reserved.
+        int inserted = jdbcTemplate.update(
+                "INSERT INTO trade_settlements (trade_id) VALUES (?) ON CONFLICT (trade_id) DO NOTHING",
+                event.getTradeId());
+        if (inserted == 0) {
+            log.warn("Duplicate TradeExecuted event skipped: {}", event.getTradeId());
+            return;
+        }
+
         log.info("Processing trade: {} {} qty={} price={}",
                 event.getTradeId(), event.getSymbol(), event.getQuantity(), event.getPrice());
 
@@ -118,10 +125,6 @@ public class PortfolioService {
         holding.setAvgBuyPrice(newAvgPrice);
         holdingRepository.save(holding);
 
-        // 3. Sync Redis cache
-        syncCashCache(userId);
-        syncHoldingCache(userId, symbol, newTotalQty);
-
         log.debug("BUY processed: user={} symbol={} qty={} newAvg={}", userId, symbol, newTotalQty, newAvgPrice);
     }
 
@@ -144,25 +147,7 @@ public class PortfolioService {
         holding.setQuantity(newQty.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : newQty);
         holdingRepository.save(holding);
 
-        // 3. Sync Redis cache
-        syncCashCache(userId);
-        syncHoldingCache(userId, symbol, holding.getQuantity());
-
         log.debug("SELL processed: user={} symbol={} qty={} proceeds={}", userId, symbol, quantity, proceeds);
-    }
-
-    // ── Redis cache sync ──────────────────────────────────────────
-    private void syncCashCache(UUID userId) {
-        BigDecimal balance = jdbcTemplate.queryForObject(
-                "SELECT cash_balance FROM users WHERE id = ?", BigDecimal.class, userId);
-        if (balance != null) {
-            redisTemplate.opsForValue().set(String.format(CASH_KEY, userId), balance.toPlainString());
-        }
-    }
-
-    private void syncHoldingCache(UUID userId, String symbol, BigDecimal quantity) {
-        redisTemplate.opsForValue().set(
-                String.format(HOLDING_KEY, userId, symbol), quantity.toPlainString());
     }
 
     private BigDecimal getCashBalance(UUID userId) {

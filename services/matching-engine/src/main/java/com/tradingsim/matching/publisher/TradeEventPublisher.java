@@ -128,10 +128,13 @@ public class TradeEventPublisher implements EngineEventHandler {
     }
 
     private void updateOrderFill(java.util.UUID orderId, java.math.BigDecimal qty) {
+        // A fill that was already queued when the user cancelled still records its quantity,
+        // but must not revive the order — an open status would reserve funds again.
         jdbcTemplate.update("""
                 UPDATE orders
                 SET filled_quantity = filled_quantity + ?,
                     status = CASE
+                        WHEN status = 'CANCELLED' THEN 'CANCELLED'
                         WHEN filled_quantity + ? >= quantity THEN 'FILLED'
                         ELSE 'PARTIAL'
                     END,
