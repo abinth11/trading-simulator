@@ -135,14 +135,23 @@ class OrderBookTest {
         assertThat(result).isFalse();
     }
 
-    // ── Execution price is sell price ─────────────────────────────
+    // ── Execution price is the resting order's price ──────────────
     @Test
-    void executionPrice_isSellPrice() {
+    void executionPrice_incomingBuy_paysRestingAsk() {
         book.addOrder(order(Side.SELL, 100.0, 10));
         List<TradeEvent> trades = book.addOrder(order(Side.BUY, 105.0, 10)).trades(); // buyer willing to pay more
 
         assertThat(trades).hasSize(1);
-        assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0"); // executed at sell price
+        assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0"); // resting sell's price
+    }
+
+    @Test
+    void executionPrice_incomingSell_getsRestingBid() {
+        book.addOrder(order(Side.BUY, 105.0, 10));
+        List<TradeEvent> trades = book.addOrder(order(Side.SELL, 100.0, 10)).trades(); // seller willing to take less
+
+        assertThat(trades).hasSize(1);
+        assertThat(trades.get(0).getPrice()).isEqualByComparingTo("105.0"); // resting buy's price
     }
 
     // ── Best bid/ask ──────────────────────────────────────────────

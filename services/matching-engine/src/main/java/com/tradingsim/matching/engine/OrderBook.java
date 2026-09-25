@@ -19,7 +19,7 @@ import java.util.*;
  *   SELL side → min-heap  (lowest price gets matched first)
  *
  * Matching rule (price-time priority):
- *   best BUY price >= best SELL price → execute at SELL price
+ *   best BUY price >= best SELL price → execute at the resting order's price
  *
  * This class is NOT thread-safe by design.
  * Thread safety is enforced by the SymbolEngine wrapper (one thread per symbol).
@@ -123,8 +123,10 @@ public class OrderBook {
             BigDecimal fillQty = bestBuy.getRemainingQuantity()
                     .min(bestSell.getRemainingQuantity());
 
-            // Execute at the sell price (price-time priority convention)
-            result.trades().add(execute(bestBuy, bestSell, bestSell.getPrice(), fillQty));
+            // Execute at the resting order's price — it was in the book first, so the incoming
+            // order gets any price improvement
+            Order resting = bestBuy == incoming ? bestSell : bestBuy;
+            result.trades().add(execute(bestBuy, bestSell, resting.getPrice(), fillQty));
 
             // Remove fully filled orders from the book
             if (bestBuy.isFilled()) {
