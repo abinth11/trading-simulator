@@ -47,6 +47,9 @@ const userColumns: TableColumn<AdminUser & { portfolioValue: number; totalUnreal
 ];
 
 export default function App() {
+  const [theme, setTheme] = useState<"dark" | "light">(() =>
+    document.documentElement.dataset.theme === "light" ? "light" : "dark"
+  );
   const [orderStatusFilter, setOrderStatusFilter] = useState<"ALL" | "FILLED" | "OPEN" | "REJECTED">("ALL");
   const [orderSearch, setOrderSearch] = useState("");
   const [userSearch, setUserSearch] = useState("");
@@ -85,6 +88,10 @@ export default function App() {
     );
     return matched?.id ?? "overview";
   }, [location.pathname]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
 
   useEffect(() => {
     if (!window.matchMedia("(max-width: 1180px)").matches) return;
@@ -245,6 +252,24 @@ export default function App() {
             <p>{pageDescriptions[activeTab]}</p>
           </div>
           <div className="header-actions">
+            <button
+              className="ghost-button theme-toggle"
+              type="button"
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              aria-pressed={theme === "light"}
+              onClick={() => {
+                const nextTheme = theme === "dark" ? "light" : "dark";
+                setTheme(nextTheme);
+                try {
+                  localStorage.setItem("admin-dashboard-theme", nextTheme);
+                } catch {
+                  // Keep the selected theme for this session if storage is unavailable.
+                }
+              }}
+            >
+              <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+              {theme === "dark" ? "Light mode" : "Dark mode"}
+            </button>
             <div className="refresh-chip">
               <span>{state.pageLoading ? "Refreshing" : "Updated"}</span>
               <strong>{state.lastUpdated ? formatTime(state.lastUpdated) : "--:--:--"}</strong>
