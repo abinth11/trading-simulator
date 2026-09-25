@@ -14,6 +14,9 @@ public interface EngineEventHandler {
     /** A batch of trades produced by one incoming order. */
     void onTrades(List<TradeEvent> trades);
 
-    /** A MARKET order finished matching with quantity left over; the remainder was cancelled. */
-    void onOrderExpired(Order order);
+    /**
+     * The engine cancelled an order while matching: a MARKET order's unfilled remainder,
+     * or a resting order removed by self-trade prevention.
+     */
+    void onOrderCancelled(Order order);
 }

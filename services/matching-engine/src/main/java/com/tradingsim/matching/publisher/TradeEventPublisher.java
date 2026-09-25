@@ -93,11 +93,11 @@ public class TradeEventPublisher implements EngineEventHandler {
     }
 
     /**
-     * MARKET orders are immediate-or-cancel: whatever the engine could not fill is cancelled.
-     * filled_quantity is left as-is, so a partly filled MARKET order shows how much executed.
+     * Persists an engine-side cancellation (MARKET remainder or self-trade prevention).
+     * filled_quantity is left as-is, so a partly filled order shows how much executed.
      */
     @Override
-    public void onOrderExpired(Order order) {
+    public void onOrderCancelled(Order order) {
         jdbcTemplate.update("""
                 UPDATE orders
                 SET status = 'CANCELLED',
@@ -105,8 +105,8 @@ public class TradeEventPublisher implements EngineEventHandler {
                 WHERE id = ? AND status IN ('PENDING', 'PARTIAL')
                 """, order.getId());
 
-        log.info("MARKET order {} expired: filled {} of {}",
-                order.getId(), order.getFilledQuantity(), order.getQuantity());
+        log.info("{} order {} cancelled by engine: filled {} of {}",
+                order.getType(), order.getId(), order.getFilledQuantity(), order.getQuantity());
     }
 
     private void persistTrade(TradeEvent trade) {

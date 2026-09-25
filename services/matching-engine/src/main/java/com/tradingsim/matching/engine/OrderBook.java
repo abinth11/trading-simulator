@@ -54,30 +54,29 @@ public class OrderBook {
 
     /**
      * Add an order to the book and attempt to match it immediately.
-     * Returns a list of TradeEvents produced (empty if no match).
+     * Returns the trades produced and any orders the engine cancelled along the way.
      */
-    public List<TradeEvent> addOrder(Order order) {
+    public MatchResult addOrder(Order order) {
         log.debug("Adding {} {} {} order: price={} qty={} id={}",
                 order.getSide(), order.getType(), symbol, order.getPrice(), order.getQuantity(), order.getId());
 
-        List<TradeEvent> trades = new ArrayList<>();
+        MatchResult result = new MatchResult(new ArrayList<>(), new ArrayList<>());
 
         if (order.getType() == OrderType.MARKET) {
-            matchMarket(order, trades);
-            return trades;
+            matchMarket(order, result);
+            return result;
         }
 
         orderIndex.put(order.getId(), order);
 
         if (order.getSide() == Side.BUY) {
             buyOrders.offer(order);
-            match(trades);
         } else {
             sellOrders.offer(order);
-            match(trades);
         }
+        match(order, result);
 
-        return trades;
+        return result;
     }
 
     /**
@@ -105,18 +104,27 @@ public class OrderBook {
     /**
      * Core matching loop.
      * Runs until no more matches are possible.
+     *
+     * The book is never crossed before an order arrives, so every match here
+     * pairs the incoming order with a resting one.
      */
-    private void match(List<TradeEvent> trades) {
+    private void match(Order incoming, MatchResult result) {
         while (canMatch()) {
             Order bestBuy  = buyOrders.peek();
             Order bestSell = sellOrders.peek();
+
+            // Self-trade prevention: the newer instruction wins, the user's resting order is cancelled
+            if (bestBuy.getUserId().equals(bestSell.getUserId())) {
+                cancelResting(bestBuy == incoming ? bestSell : bestBuy, result);
+                continue;
+            }
 
             // Determine fill quantity — the smaller of the two remaining quantities
             BigDecimal fillQty = bestBuy.getRemainingQuantity()
                     .min(bestSell.getRemainingQuantity());
 
             // Execute at the sell price (price-time priority convention)
-            trades.add(execute(bestBuy, bestSell, bestSell.getPrice(), fillQty));
+            result.trades().add(execute(bestBuy, bestSell, bestSell.getPrice(), fillQty));
 
             // Remove fully filled orders from the book
             if (bestBuy.isFilled()) {
@@ -135,15 +143,22 @@ public class OrderBook {
      * order's price, never rest on the book, and any unfilled remainder is cancelled.
      * A non-null price is the market-protection cap — the order won't fill beyond it.
      */
-    private void matchMarket(Order order, List<TradeEvent> trades) {
+    private void matchMarket(Order order, MatchResult result) {
         boolean isBuy = order.getSide() == Side.BUY;
         PriorityQueue<Order> opposite = isBuy ? sellOrders : buyOrders;
 
         while (!order.isFilled() && !opposite.isEmpty() && withinCap(order, opposite.peek().getPrice())) {
             Order resting = opposite.peek();
+
+            // Self-trade prevention: the newer instruction wins, the user's resting order is cancelled
+            if (resting.getUserId().equals(order.getUserId())) {
+                cancelResting(resting, result);
+                continue;
+            }
+
             BigDecimal fillQty = order.getRemainingQuantity().min(resting.getRemainingQuantity());
 
-            trades.add(isBuy
+            result.trades().add(isBuy
                     ? execute(order, resting, resting.getPrice(), fillQty)
                     : execute(resting, order, resting.getPrice(), fillQty));
 
@@ -155,8 +170,19 @@ public class OrderBook {
 
         if (!order.isFilled()) {
             order.setStatus(Order.OrderStatus.CANCELLED);
+            result.cancelled().add(order);
             log.debug("MARKET order {} expired with {} unfilled", order.getId(), order.getRemainingQuantity());
         }
+    }
+
+    /** Removes a resting order that sits at the top of its side and marks it cancelled. */
+    private void cancelResting(Order resting, MatchResult result) {
+        (resting.getSide() == Side.BUY ? buyOrders : sellOrders).poll();
+        orderIndex.remove(resting.getId());
+        resting.setStatus(Order.OrderStatus.CANCELLED);
+        result.cancelled().add(resting);
+        log.info("Self-trade prevented: cancelled resting {} order {} for user {}",
+                resting.getSide(), resting.getId(), resting.getUserId());
     }
 
     private boolean withinCap(Order marketOrder, BigDecimal restingPrice) {

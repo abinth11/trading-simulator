@@ -1,10 +1,8 @@
 package com.tradingsim.matching.engine;
 
 import com.tradingsim.matching.model.Order;
-import com.tradingsim.matching.model.TradeEvent;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -71,15 +69,12 @@ public class SymbolEngine implements Runnable {
                 }
 
                 if (cmd instanceof EngineCommand.AddOrder addCmd) {
-                    Order order = addCmd.order();
-                    List<TradeEvent> trades = orderBook.addOrder(order);
-                    if (!trades.isEmpty()) {
-                        eventHandler.onTrades(trades); // publish to event bus
+                    MatchResult result = orderBook.addOrder(addCmd.order());
+                    if (!result.trades().isEmpty()) {
+                        eventHandler.onTrades(result.trades()); // publish to event bus
                     }
-                    // Trades are published first so the fills land before the remainder is cancelled
-                    if (order.getStatus() == Order.OrderStatus.CANCELLED) {
-                        eventHandler.onOrderExpired(order);
-                    }
+                    // Trades are published first so a MARKET order's fills land before its remainder is cancelled
+                    result.cancelled().forEach(eventHandler::onOrderCancelled);
                 }
 
                 if (cmd instanceof EngineCommand.CancelOrder cancelCmd) {

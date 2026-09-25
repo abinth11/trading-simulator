@@ -1,5 +1,6 @@
 package com.tradingsim.matching;
 
+import com.tradingsim.matching.engine.MatchResult;
 import com.tradingsim.matching.engine.OrderBook;
 import com.tradingsim.matching.model.Order;
 import com.tradingsim.matching.model.Order.*;
@@ -42,8 +43,8 @@ class OrderBookTest {
     // ── No match when prices don't cross ─────────────────────────
     @Test
     void noMatch_whenBuyPriceLowerThanSellPrice() {
-        List<TradeEvent> trades = book.addOrder(order(Side.BUY,  100.0, 10));
-        trades.addAll(book.addOrder(order(Side.SELL, 101.0, 10)));
+        List<TradeEvent> trades = book.addOrder(order(Side.BUY,  100.0, 10)).trades();
+        trades.addAll(book.addOrder(order(Side.SELL, 101.0, 10)).trades());
 
         assertThat(trades).isEmpty();
         assertThat(book.getBuyDepth()).isEqualTo(1);
@@ -54,7 +55,7 @@ class OrderBookTest {
     @Test
     void fullFill_whenPricesCross() {
         book.addOrder(order(Side.SELL, 100.0, 10));
-        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 100.0, 10));
+        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 100.0, 10)).trades();
 
         assertThat(trades).hasSize(1);
         assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0");
@@ -69,7 +70,7 @@ class OrderBookTest {
     @Test
     void partialFill_whenBuyQuantityLargerThanSell() {
         book.addOrder(order(Side.SELL, 100.0, 5));   // sell 5
-        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 100.0, 10)); // buy 10
+        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 100.0, 10)).trades(); // buy 10
 
         assertThat(trades).hasSize(1);
         assertThat(trades.get(0).getQuantity()).isEqualByComparingTo("5"); // only 5 filled
@@ -88,7 +89,7 @@ class OrderBookTest {
         book.addOrder(order(Side.SELL, 101.0, 5));
 
         // Buy 12 — should fill the 100.0 and 100.5 sells (10 total), partial on 101.0
-        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 101.0, 12));
+        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 101.0, 12)).trades();
 
         assertThat(trades).hasSize(3); // filled 100.0 and 100.5 sells, partial on 101.0
         assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0");
@@ -108,7 +109,7 @@ class OrderBookTest {
         book.addOrder(sell1);
         book.addOrder(sell2);
 
-        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 101.0, 5));
+        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 101.0, 5)).trades();
 
         assertThat(trades).hasSize(1);
         assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0"); // sell2 matched first
@@ -138,7 +139,7 @@ class OrderBookTest {
     @Test
     void executionPrice_isSellPrice() {
         book.addOrder(order(Side.SELL, 100.0, 10));
-        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 105.0, 10)); // buyer willing to pay more
+        List<TradeEvent> trades = book.addOrder(order(Side.BUY, 105.0, 10)).trades(); // buyer willing to pay more
 
         assertThat(trades).hasSize(1);
         assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0"); // executed at sell price
@@ -172,7 +173,7 @@ class OrderBookTest {
         book.addOrder(order(Side.SELL, 101.0, 5));
         Order buy = marketOrder(Side.BUY, 8, null);
 
-        List<TradeEvent> trades = book.addOrder(buy);
+        List<TradeEvent> trades = book.addOrder(buy).trades();
 
         assertThat(trades).hasSize(2);
         assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0");
@@ -187,9 +188,10 @@ class OrderBookTest {
     void marketBuy_withNoLiquidity_isCancelledWithoutTrades() {
         Order buy = marketOrder(Side.BUY, 10, null);
 
-        List<TradeEvent> trades = book.addOrder(buy);
+        MatchResult result = book.addOrder(buy);
 
-        assertThat(trades).isEmpty();
+        assertThat(result.trades()).isEmpty();
+        assertThat(result.cancelled()).containsExactly(buy); // reported so the DB row is cancelled
         assertThat(buy.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(book.getBuyDepth()).isZero();
     }
@@ -199,7 +201,7 @@ class OrderBookTest {
         book.addOrder(order(Side.SELL, 100.0, 4));
         Order buy = marketOrder(Side.BUY, 10, null);
 
-        List<TradeEvent> trades = book.addOrder(buy);
+        List<TradeEvent> trades = book.addOrder(buy).trades();
 
         assertThat(trades).hasSize(1);
         assertThat(buy.getFilledQuantity()).isEqualByComparingTo("4");
@@ -214,7 +216,7 @@ class OrderBookTest {
         book.addOrder(order(Side.SELL, 110.0, 5)); // beyond the cap
         Order buy = marketOrder(Side.BUY, 10, 105.0);
 
-        List<TradeEvent> trades = book.addOrder(buy);
+        List<TradeEvent> trades = book.addOrder(buy).trades();
 
         assertThat(trades).hasSize(1);
         assertThat(trades.get(0).getPrice()).isEqualByComparingTo("100.0");
@@ -230,7 +232,7 @@ class OrderBookTest {
         book.addOrder(order(Side.BUY, 90.0, 5)); // below the cap
         Order sell = marketOrder(Side.SELL, 15, 95.0);
 
-        List<TradeEvent> trades = book.addOrder(sell);
+        List<TradeEvent> trades = book.addOrder(sell).trades();
 
         assertThat(trades).extracting(TradeEvent::getPrice)
                 .usingElementComparator(BigDecimal::compareTo)
@@ -238,5 +240,63 @@ class OrderBookTest {
         assertThat(sell.getFilledQuantity()).isEqualByComparingTo("10");
         assertThat(sell.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(book.getBuyDepth()).isEqualTo(1);
+    }
+
+    // ── Self-trade prevention ─────────────────────────────────────
+    private Order orderFor(UUID userId, Side side, double price, double qty) {
+        Order order = order(side, price, qty);
+        order.setUserId(userId);
+        return order;
+    }
+
+    @Test
+    void selfTrade_limit_cancelsRestingOrderAndIncomingRests() {
+        UUID trader = UUID.randomUUID();
+        Order restingSell = orderFor(trader, Side.SELL, 100.0, 5);
+        book.addOrder(restingSell);
+
+        Order buy = orderFor(trader, Side.BUY, 101.0, 5);
+        MatchResult result = book.addOrder(buy);
+
+        assertThat(result.trades()).isEmpty();
+        assertThat(result.cancelled()).containsExactly(restingSell);
+        assertThat(restingSell.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        assertThat(book.getSellDepth()).isZero();
+        assertThat(book.getBestBidPrice()).hasValueSatisfying(p ->
+                assertThat(p).isEqualByComparingTo("101.0")); // the new order rests
+        assertThat(book.cancelOrder(restingSell.getId())).isFalse(); // gone from the index too
+    }
+
+    @Test
+    void selfTrade_limit_skipsOwnOrderAndFillsAgainstOthers() {
+        UUID trader = UUID.randomUUID();
+        Order ownSell = orderFor(trader, Side.SELL, 100.0, 5);
+        book.addOrder(ownSell);
+        book.addOrder(order(Side.SELL, 101.0, 5)); // someone else
+
+        MatchResult result = book.addOrder(orderFor(trader, Side.BUY, 101.0, 5));
+
+        assertThat(result.cancelled()).containsExactly(ownSell);
+        assertThat(result.trades()).hasSize(1);
+        TradeEvent trade = result.trades().get(0);
+        assertThat(trade.getBuyerId()).isNotEqualTo(trade.getSellerId());
+        assertThat(trade.getPrice()).isEqualByComparingTo("101.0");
+        assertThat(book.getSellDepth()).isZero();
+        assertThat(book.getBuyDepth()).isZero();
+    }
+
+    @Test
+    void selfTrade_market_cancelsRestingOrderThenExpires() {
+        UUID trader = UUID.randomUUID();
+        Order ownBuy = orderFor(trader, Side.BUY, 100.0, 5);
+        book.addOrder(ownBuy);
+
+        Order sell = marketOrder(Side.SELL, 5, null);
+        sell.setUserId(trader);
+        MatchResult result = book.addOrder(sell);
+
+        assertThat(result.trades()).isEmpty();
+        assertThat(result.cancelled()).containsExactly(ownBuy, sell);
+        assertThat(book.getBuyDepth()).isZero();
     }
 }
