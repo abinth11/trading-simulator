@@ -235,37 +235,45 @@ export default function App() {
 
         {showGlobalMarketHeader ? (
           <>
-            <section className="market-strip">
-              <article>
-                <span>Spread</span>
-                <strong>{formatMoney(marketPulse.spread)}</strong>
-              </article>
-              <article>
-                <span>Best Bid</span>
-                <strong>{formatMoney(marketPulse.bestBid)}</strong>
-              </article>
-              <article>
-                <span>Best Ask</span>
-                <strong>{formatMoney(marketPulse.bestAsk)}</strong>
-              </article>
-              <article>
-                <span>Buy Depth</span>
-                <strong>{formatCompactNumber(marketPulse.buyDepth)}</strong>
-              </article>
-              <article>
-                <span>Sell Depth</span>
-                <strong>{formatCompactNumber(marketPulse.sellDepth)}</strong>
-              </article>
-              <article>
-                <span>Flow</span>
-                <strong>{headlineNumbers.activeOrderFlow}</strong>
-              </article>
-            </section>
+            <section className="overview-summary" aria-label="Market and platform summary">
+              <div className="overview-summary-group">
+                <h3 className="overview-summary-heading">Market Pulse</h3>
+                <div className="market-strip">
+                  <article>
+                    <span>Spread</span>
+                    <strong>{formatMoney(marketPulse.spread)}</strong>
+                  </article>
+                  <article>
+                    <span>Best Bid</span>
+                    <strong>{formatMoney(marketPulse.bestBid)}</strong>
+                  </article>
+                  <article>
+                    <span>Best Ask</span>
+                    <strong>{formatMoney(marketPulse.bestAsk)}</strong>
+                  </article>
+                  <article>
+                    <span>Buy Depth</span>
+                    <strong>{formatCompactNumber(marketPulse.buyDepth)}</strong>
+                  </article>
+                  <article>
+                    <span>Sell Depth</span>
+                    <strong>{formatCompactNumber(marketPulse.sellDepth)}</strong>
+                  </article>
+                  <article>
+                    <span>Flow</span>
+                    <strong>{headlineNumbers.activeOrderFlow}</strong>
+                  </article>
+                </div>
+              </div>
 
-            <section className="kpi-grid">
-              {metrics.map((metric) => (
-                <KpiCard key={metric.label} metric={metric} />
-              ))}
+              <div className="overview-summary-group">
+                <h3 className="overview-summary-heading">Platform Snapshot</h3>
+                <div className="kpi-grid">
+                  {metrics.map((metric) => (
+                    <KpiCard key={metric.label} metric={metric} />
+                  ))}
+                </div>
+              </div>
             </section>
           </>
         ) : null}

@@ -238,6 +238,26 @@ select {
   gap: 14px;
 }
 
+.overview-summary {
+  display: grid;
+  gap: 18px;
+}
+
+.overview-summary-group {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.overview-summary-heading {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .market-strip {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
@@ -311,6 +331,7 @@ select {
 }
 
 .kpi-card {
+  min-width: 0;
   padding: 16px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
@@ -334,6 +355,7 @@ select {
 .kpi-delta {
   color: var(--muted);
   font-size: 0.9rem;
+  overflow-wrap: anywhere;
 }
 
 .status-badge {
@@ -1113,11 +1135,15 @@ select {
   .service-grid,
   .service-health-meta,
   .market-strip,
-  .kpi-grid,
   .risk-cards,
   .system-topbar,
   .simulation-stats {
     grid-template-columns: 1fr;
+  }
+
+  .market-strip,
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1137,6 +1163,41 @@ select {
 
   .nav-item span {
     display: none;
+  }
+
+  .overview-summary {
+    gap: 16px;
+  }
+
+  .market-strip,
+  .kpi-grid {
+    gap: 8px;
+  }
+
+  .market-strip article {
+    padding: 11px 12px;
+  }
+
+  .kpi-card {
+    padding: 12px;
+  }
+
+  .kpi-header {
+    align-items: flex-start;
+  }
+
+  .kpi-header .status-badge {
+    padding: 4px 7px;
+    font-size: 0.65rem;
+  }
+
+  .kpi-value {
+    margin: 11px 0 6px;
+    font-size: 1.45rem;
+  }
+
+  .kpi-delta {
+    font-size: 0.8rem;
   }
 
   .header-actions > button,
