@@ -11,7 +11,7 @@ import StatusBadge from "./components/StatusBadge";
 import UserDrawer from "./components/UserDrawer";
 import { useDashboardData } from "./hooks/useDashboardData";
 import { navigationItems, serviceEndpoints, type AdminOrder, type AdminUser, type NavigationTab, type SymbolActivityItem, type TableColumn } from "./types";
-import { formatBytes, formatCompactNumber, formatDate, formatDurationSeconds, formatMoney, formatPlainPercent, formatSignedMoney, formatTime, mapStatusTone } from "./utils/format";
+import { formatBytes, formatCompactNumber, formatDurationSeconds, formatMoney, formatPlainPercent, formatSignedMoney, formatTime, mapStatusTone } from "./utils/format";
 
 const orderColumns: TableColumn<AdminOrder>[] = [
   { key: "createdAt", label: "Time", render: (row) => formatTime(row.createdAt) },
@@ -782,25 +782,24 @@ export default function App() {
           <section className="dashboard-grid">
             <Panel
               title="User Registry"
-              subtitle="Search operators, traders, and bots by username, email, or role"
+              subtitle="Search accounts and select View to inspect portfolio and holdings"
               action={
                 <input
                   className="table-search"
+                  aria-label="Search users by username, email, or role"
                   placeholder="Search users"
                   value={userSearch}
                   onChange={(event) => setUserSearch(event.target.value)}
                 />
               }
             >
-              <DataTable columns={userColumns} rows={filteredUsers} rowKey={(row) => row.id} />
-              <div className="user-selector-grid">
-                {filteredUsers.map((user) => (
-                  <button key={user.id} className="user-chip" onClick={() => selectUser(user)} type="button">
-                    <strong>{user.username}</strong>
-                    <span>{formatDate(user.createdAt)}</span>
-                  </button>
-                ))}
-              </div>
+              <DataTable
+                columns={userColumns}
+                rows={filteredUsers}
+                rowKey={(row) => row.id}
+                emptyMessage={userSearch.trim() ? "No users match this search." : "No user accounts are available."}
+                rowAction={{ label: "View", onSelect: selectUser }}
+              />
             </Panel>
 
             <Panel title="Account Pulse" subtitle="Quick read on account health and concentration">

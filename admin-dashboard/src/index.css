@@ -186,7 +186,6 @@ select {
 .header-actions,
 .filter-row,
 .symbol-tabs,
-.user-selector-grid,
 .simulation-actions,
 .simulation-form {
   display: flex;
@@ -549,6 +548,27 @@ select {
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   white-space: nowrap;
   text-align: left;
+}
+
+.table-action {
+  min-height: 34px;
+  padding: 6px 11px;
+  border: 1px solid rgba(77, 163, 255, 0.24);
+  border-radius: 9px;
+  color: #b9dcff;
+  background: rgba(77, 163, 255, 0.08);
+  cursor: pointer;
+}
+
+.table-action:hover {
+  border-color: rgba(77, 163, 255, 0.48);
+  background: rgba(77, 163, 255, 0.16);
+}
+
+.table-empty {
+  height: 96px;
+  color: var(--muted);
+  text-align: center !important;
 }
 
 .data-table th {

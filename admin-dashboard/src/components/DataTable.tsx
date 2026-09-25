@@ -5,9 +5,14 @@ interface DataTableProps<TRow> {
   columns: TableColumn<TRow>[];
   rows: TRow[];
   rowKey: (row: TRow) => string;
+  emptyMessage?: string;
+  rowAction?: {
+    label: string;
+    onSelect: (row: TRow) => void;
+  };
 }
 
-export default function DataTable<TRow>({ columns, rows, rowKey }: DataTableProps<TRow>) {
+export default function DataTable<TRow>({ columns, rows, rowKey, emptyMessage = "No records found.", rowAction }: DataTableProps<TRow>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
@@ -67,21 +72,33 @@ export default function DataTable<TRow>({ columns, rows, rowKey }: DataTableProp
                 )}
               </th>
             ))}
+            {rowAction ? <th scope="col">Action</th> : null}
           </tr>
         </thead>
         <tbody>
-          {sortedRows.map((row) => (
-            <tr key={rowKey(row)}>
-              {columns.map((column) => (
-                <td
-                  key={String(column.key)}
-                  className={`${column.className ?? ""} ${column.align === "right" ? "align-right" : ""}`.trim()}
-                >
-                  {column.render ? column.render(row) : String(row[column.key as keyof TRow] ?? "")}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {sortedRows.length ? sortedRows.map((row) => (
+              <tr key={rowKey(row)}>
+                {columns.map((column) => (
+                  <td
+                    key={String(column.key)}
+                    className={`${column.className ?? ""} ${column.align === "right" ? "align-right" : ""}`.trim()}
+                  >
+                    {column.render ? column.render(row) : String(row[column.key as keyof TRow] ?? "")}
+                  </td>
+                ))}
+                {rowAction ? (
+                  <td>
+                    <button className="table-action" onClick={() => rowAction.onSelect(row)} type="button">
+                      {rowAction.label}
+                    </button>
+                  </td>
+                ) : null}
+              </tr>
+            )) : (
+              <tr>
+                <td className="table-empty" colSpan={columns.length + (rowAction ? 1 : 0)}>{emptyMessage}</td>
+              </tr>
+            )}
         </tbody>
       </table>
     </div>
