@@ -423,7 +423,9 @@ export function useDashboardData() {
       {
         label: "Active Symbols",
         value: formatInteger(state.activeSymbols.length),
-        delta: state.activeSymbols.join(" • ") || "No active books",
+        delta: state.activeSymbols.length
+          ? `${state.activeSymbols.slice(0, 3).join(" • ")}${state.activeSymbols.length > 3 ? ` +${state.activeSymbols.length - 3} more` : ""}`
+          : "No active books",
         tone: state.activeSymbols.length ? "positive" : "warning"
       },
       {

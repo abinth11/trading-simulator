@@ -13,6 +13,12 @@ import { useDashboardData } from "./hooks/useDashboardData";
 import { navigationItems, serviceEndpoints, type AdminOrder, type AdminUser, type NavigationTab, type SymbolActivityItem, type TableColumn } from "./types";
 import { formatBytes, formatCompactNumber, formatDurationSeconds, formatMoney, formatPlainPercent, formatSignedMoney, formatTime, mapStatusTone } from "./utils/format";
 
+function summarizeSymbols(symbols: string[]): string {
+  if (symbols.length === 0) return "No symbols selected";
+  const preview = symbols.slice(0, 3).join(" • ");
+  return symbols.length > 3 ? `${preview} • +${symbols.length - 3} more` : preview;
+}
+
 const orderColumns: TableColumn<AdminOrder>[] = [
   { key: "createdAt", label: "Time", render: (row) => formatTime(row.createdAt) },
   { key: "symbol", label: "Symbol" },
@@ -33,11 +39,11 @@ const orderColumns: TableColumn<AdminOrder>[] = [
 
 const userColumns: TableColumn<AdminUser & { portfolioValue: number; totalUnrealizedPnl: number; holdingsCount: number }>[] = [
   { key: "username", label: "Username", sortable: true },
-  { key: "role", label: "Role", render: (row) => <StatusBadge value={row.role} tone={mapStatusTone(row.role)} /> },
+  { key: "role", label: "Role", className: "users-role", render: (row) => <StatusBadge value={row.role} tone={mapStatusTone(row.role)} /> },
   { key: "isActive", label: "Status", render: (row) => <StatusBadge value={row.isActive ? "ACTIVE" : "INACTIVE"} tone={row.isActive ? "positive" : "critical"} /> },
-  { key: "cashBalance", label: "Cash", align: "right", render: (row) => formatMoney(row.cashBalance), sortable: true, sortValue: (row) => row.cashBalance },
-  { key: "portfolioValue", label: "Portfolio", align: "right", render: (row) => formatMoney(row.portfolioValue), sortable: true, sortValue: (row) => row.portfolioValue },
-  { key: "totalUnrealizedPnl", label: "PnL", align: "right", render: (row) => <span className={row.totalUnrealizedPnl >= 0 ? "positive-text" : "negative-text"}>{formatSignedMoney(row.totalUnrealizedPnl)}</span>, sortable: true, sortValue: (row) => row.totalUnrealizedPnl }
+  { key: "cashBalance", label: "Cash", className: "users-cash", align: "right", render: (row) => formatMoney(row.cashBalance), sortable: true, sortValue: (row) => row.cashBalance },
+  { key: "portfolioValue", label: "Portfolio", className: "users-portfolio", align: "right", render: (row) => formatMoney(row.portfolioValue), sortable: true, sortValue: (row) => row.portfolioValue },
+  { key: "totalUnrealizedPnl", label: "PnL", className: "users-pnl", align: "right", render: (row) => <span className={row.totalUnrealizedPnl >= 0 ? "positive-text" : "negative-text"}>{formatSignedMoney(row.totalUnrealizedPnl)}</span>, sortable: true, sortValue: (row) => row.totalUnrealizedPnl }
 ];
 
 export default function App() {
@@ -79,6 +85,21 @@ export default function App() {
     );
     return matched?.id ?? "overview";
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!window.matchMedia("(max-width: 1180px)").matches) return;
+    const nav = document.querySelector<HTMLElement>(".nav-list");
+    const activeLink = nav?.querySelector<HTMLElement>(".nav-item.active");
+    if (!activeLink || !nav) return;
+
+    const navBounds = nav.getBoundingClientRect();
+    const linkBounds = activeLink.getBoundingClientRect();
+    if (linkBounds.left < navBounds.left) {
+      nav.scrollLeft -= navBounds.left - linkBounds.left + 2;
+    } else if (linkBounds.right > navBounds.right) {
+      nav.scrollLeft += linkBounds.right - navBounds.right + 2;
+    }
+  }, [activeTab, location.pathname, state.pageLoading]);
 
   const filteredOrders = useMemo(() => {
     const query = orderSearch.trim().toLowerCase();
@@ -481,6 +502,7 @@ export default function App() {
                 rows={filteredOrders}
                 rowKey={(row) => row.id}
                 emptyMessage="No orders match this search and status filter."
+                scrollHint
               />
             </Panel>
 
@@ -551,7 +573,7 @@ export default function App() {
                 <div className="simulation-stats">
                   <div>
                     <span>Symbols</span>
-                    <strong>{simulationStatus?.symbols.join(" • ") || simulationPool.join(" • ")}</strong>
+                    <strong>{summarizeSymbols(simulationStatus?.symbols.length ? simulationStatus.symbols : simulationPool)}</strong>
                   </div>
                   <div>
                     <span>Ticks Executed</span>
@@ -842,7 +864,7 @@ export default function App() {
           } />
 
           <Route path="/users" element={
-          <section className="dashboard-grid">
+          <section className="dashboard-grid users-tab-grid">
             <Panel
               title="User Registry"
               subtitle="Search accounts and select View to inspect portfolio and holdings"

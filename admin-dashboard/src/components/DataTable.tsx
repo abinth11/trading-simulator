@@ -6,13 +6,14 @@ interface DataTableProps<TRow> {
   rows: TRow[];
   rowKey: (row: TRow) => string;
   emptyMessage?: string;
+  scrollHint?: boolean;
   rowAction?: {
     label: string;
     onSelect: (row: TRow) => void;
   };
 }
 
-export default function DataTable<TRow>({ columns, rows, rowKey, emptyMessage = "No records found.", rowAction }: DataTableProps<TRow>) {
+export default function DataTable<TRow>({ columns, rows, rowKey, emptyMessage = "No records found.", scrollHint = false, rowAction }: DataTableProps<TRow>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
@@ -57,7 +58,10 @@ export default function DataTable<TRow>({ columns, rows, rowKey, emptyMessage = 
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={String(column.key)} className={column.align === "right" ? "align-right" : undefined}>
+              <th
+                key={String(column.key)}
+                className={`${column.className ?? ""} ${column.align === "right" ? "align-right" : ""}`.trim()}
+              >
                 {column.sortable ? (
                   <button
                     className={`table-sort ${sortKey === String(column.key) ? "active" : ""}`}
@@ -101,6 +105,7 @@ export default function DataTable<TRow>({ columns, rows, rowKey, emptyMessage = 
             )}
         </tbody>
       </table>
+      {scrollHint ? <div className="table-scroll-hint">Swipe horizontally to see all order fields.</div> : null}
     </div>
   );
 }
