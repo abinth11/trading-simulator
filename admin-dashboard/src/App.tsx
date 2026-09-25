@@ -67,7 +67,8 @@ export default function App() {
     refreshDashboard,
     startSimulation,
     stopSimulation,
-    serviceHealthSnapshots
+    serviceHealthSnapshots,
+    serviceHealthState
   } = useDashboardData();
 
   const activeTab = useMemo<NavigationTab>(() => {
@@ -151,13 +152,31 @@ export default function App() {
     [state.configuredSymbols, symbolSearch]
   );
 
-  if (state.pageLoading) {
+  if (state.pageLoading && !state.lastUpdated) {
     return <div className="app-loading">Booting trading workstation...</div>;
   }
 
-  if (state.pageError) {
+  if (state.pageError && !state.lastUpdated) {
     return <div className="app-loading">Dashboard load failed: {state.pageError}</div>;
   }
+
+  const pageDescriptions: Record<NavigationTab, string> = {
+    overview: "A live view of market activity, execution quality, platform health, and exposure.",
+    trading: "Search recent orders, review execution activity, and control the market simulator.",
+    orderbook: "Inspect live bid and ask depth across active matching-engine books.",
+    symbols: "Manage configured symbols and choose which markets the simulator uses.",
+    users: "Review account status, balances, portfolio value, and holdings.",
+    risk: "Monitor exposure concentration and unrealized account performance.",
+    system: "Review service health, resource usage, and dependency status."
+  };
+
+  const connectionTone = liveLabel === "Streaming"
+    ? "is-live"
+    : liveLabel === "Stream Error"
+      ? "has-error"
+      : liveLabel === "Reconnecting"
+        ? "is-reconnecting"
+        : "is-syncing";
 
   return (
     <div className="workspace-shell">
@@ -202,39 +221,52 @@ export default function App() {
           <div>
             <div className="eyebrow">{activeTab === "system" ? "Infrastructure Command" : "Live Market Operations"}</div>
             <h2>{tabTitle}</h2>
-            <p>
-              {activeTab === "system"
-                ? "Deep health visibility for every service, focused on uptime, resource pressure, and dependency status."
-                : "Real services, typed UI, and market-first information density designed for faster operational reads."}
-            </p>
+            <p>{pageDescriptions[activeTab]}</p>
           </div>
           <div className="header-actions">
             <div className="refresh-chip">
-              <span>Updated</span>
+              <span>{state.pageLoading ? "Refreshing" : "Updated"}</span>
               <strong>{state.lastUpdated ? formatTime(state.lastUpdated) : "--:--:--"}</strong>
             </div>
-            <button className="ghost-button" onClick={() => refreshDashboard()} type="button">Refresh</button>
-            <button className="primary-button" type="button">{liveLabel}</button>
+            <button className="ghost-button" onClick={() => refreshDashboard()} type="button" disabled={state.pageLoading}>
+              {state.pageLoading ? "Refreshing…" : "Refresh"}
+            </button>
+            <span className={`connection-chip ${connectionTone}`} role="status" aria-live="polite">
+              <span className="connection-dot" aria-hidden="true" />
+              {liveLabel}
+            </span>
           </div>
         </header>
+
+        {state.pageError && state.lastUpdated ? (
+          <div className="dashboard-notice error-notice" role="alert">
+            Refresh failed: {state.pageError}. Showing the last successful update from {formatTime(state.lastUpdated)}.
+          </div>
+        ) : null}
+
+        {activeTab === "system" && serviceHealthState === "error" && serviceHealthSnapshots.length > 0 ? (
+          <div className="dashboard-notice warning-notice" role="status">
+            System health could not be refreshed. The service details below are from the last successful check.
+          </div>
+        ) : null}
 
         {activeTab === "system" ? (
           <section className="system-topbar">
             <article>
               <span>Healthy Services</span>
-              <strong>{systemSummary.healthy}</strong>
+              <strong>{serviceHealthSnapshots.length ? systemSummary.healthy : "—"}</strong>
             </article>
             <article>
               <span>Degraded Services</span>
-              <strong>{systemSummary.degraded}</strong>
+              <strong>{serviceHealthSnapshots.length ? systemSummary.degraded : "—"}</strong>
             </article>
             <article>
               <span>Peak System CPU</span>
-              <strong>{formatPlainPercent(systemSummary.highestCpu)}</strong>
+              <strong>{serviceHealthSnapshots.length ? formatPlainPercent(systemSummary.highestCpu) : "—"}</strong>
             </article>
             <article>
               <span>Peak Heap Usage</span>
-              <strong>{formatPlainPercent(systemSummary.highestHeap)}</strong>
+              <strong>{serviceHealthSnapshots.length ? formatPlainPercent(systemSummary.highestHeap) : "—"}</strong>
             </article>
           </section>
         ) : null}
@@ -294,7 +326,7 @@ export default function App() {
 
           <Panel title="Control Signals" subtitle="Operational alerts and quick risk pulse">
             <div className="alert-list">
-              {alerts.map((alert) => (
+              {alerts.length ? alerts.map((alert) => (
                 <article className={`alert-item ${alert.severity}`} key={alert.title}>
                   <div className="alert-row">
                     <strong>{alert.title}</strong>
@@ -302,7 +334,7 @@ export default function App() {
                   </div>
                   <p>{alert.detail}</p>
                 </article>
-              ))}
+              )) : <div className="empty-state">No active control signals.</div>}
             </div>
             <div className="micro-stats">
               <div>
@@ -372,7 +404,7 @@ export default function App() {
         <section className="dashboard-grid">
           <Panel title="Market Leaders" subtitle="Cross-symbol snapshot of the most active names on the platform">
             <div className="leaderboard">
-              {state.symbolActivity.slice(0, 6).map((item: SymbolActivityItem) => (
+              {state.symbolActivity.length ? state.symbolActivity.slice(0, 6).map((item: SymbolActivityItem) => (
                 <div key={item.symbol} className="leaderboard-row">
                   <div>
                     <strong>{item.symbol}</strong>
@@ -383,13 +415,13 @@ export default function App() {
                     <span>{formatCompactNumber(item.filledOrders)} filled</span>
                   </div>
                 </div>
-              ))}
+              )) : <div className="empty-state">No symbol activity yet.</div>}
             </div>
           </Panel>
 
           <Panel title="Watchlist Accounts" subtitle="Top accounts by unrealized performance for a quick operator scan">
             <div className="leaderboard">
-              {[...mergedUsers]
+              {mergedUsers.length ? [...mergedUsers]
                 .sort((a, b) => Math.abs(b.totalUnrealizedPnl) - Math.abs(a.totalUnrealizedPnl))
                 .slice(0, 6)
                 .map((user) => (
@@ -405,7 +437,7 @@ export default function App() {
                       </span>
                     </div>
                   </div>
-                ))}
+                )) : <div className="empty-state">No account data available.</div>}
             </div>
           </Panel>
         </section>
@@ -560,7 +592,7 @@ export default function App() {
               </div>
               <DistributionBar segments={state.orderStatusMix} />
               <div className="trade-tape">
-                {state.recentTrades.map((trade) => (
+                {state.recentTrades.length ? state.recentTrades.map((trade) => (
                   <div key={trade.id} className="trade-tape-row">
                     <div>
                       <strong>{trade.symbol}</strong>
@@ -571,7 +603,7 @@ export default function App() {
                       <span>{formatCompactNumber(trade.quantity)} qty</span>
                     </div>
                   </div>
-                ))}
+                )) : <div className="empty-state">No recent trades available.</div>}
               </div>
             </Panel>
           </section>
@@ -670,7 +702,7 @@ export default function App() {
                 <span><strong>{simulationPool.length}</strong> in pool</span>
               </div>
               <div className="symbol-registry-grid">
-                {filteredSymbols.map((symbol) => {
+                {filteredSymbols.length ? filteredSymbols.map((symbol) => {
                   const activity = state.symbolActivity.find((a) => a.symbol === symbol);
                   const isActive = state.activeSymbols.includes(symbol);
                   const inPool = simulationPool.includes(symbol);
@@ -693,7 +725,7 @@ export default function App() {
                       </div>
                     </button>
                   );
-                })}
+                }) : <div className="empty-state">No configured symbols match this search.</div>}
               </div>
             </Panel>
 
@@ -872,7 +904,7 @@ export default function App() {
                 </article>
               </div>
               <div className="exposure-list">
-                {state.exposureBySymbol.map((item) => {
+                {state.exposureBySymbol.length ? state.exposureBySymbol.map((item) => {
                   const maxExposure = Math.max(...state.exposureBySymbol.map((entry) => entry.exposure), 1);
                   return (
                     <div key={item.symbol} className="exposure-row">
@@ -883,13 +915,13 @@ export default function App() {
                       <strong>{formatMoney(item.exposure)}</strong>
                     </div>
                   );
-                })}
+                }) : <div className="empty-state">No exposure data available.</div>}
               </div>
             </Panel>
 
             <Panel title="PnL Snapshot" subtitle="Top and bottom accounts by unrealized performance">
               <div className="leaderboard">
-                {[...mergedUsers]
+                {mergedUsers.length ? [...mergedUsers]
                   .sort((a, b) => b.totalUnrealizedPnl - a.totalUnrealizedPnl)
                   .slice(0, 10)
                   .map((user) => (
@@ -905,7 +937,7 @@ export default function App() {
                         <span>{formatMoney(user.portfolioValue)}</span>
                       </div>
                     </div>
-                  ))}
+                  )) : <div className="empty-state">No account performance data available.</div>}
               </div>
             </Panel>
           </section>
@@ -915,7 +947,13 @@ export default function App() {
           <section className="dashboard-grid system-grid">
             <Panel title="Detailed Service Health" subtitle="Actuator health, CPU, heap, uptime, DB, disk, and dependency state for every service">
               <div className="system-health-grid">
-                {serviceHealthSnapshots.map((service) => {
+                {serviceHealthSnapshots.length === 0 ? (
+                  <div className="empty-state system-empty-state" role={serviceHealthState === "error" ? "alert" : "status"}>
+                    {serviceHealthState === "loading"
+                      ? "Loading service health…"
+                      : "Service health is unavailable. Check the service connections and refresh."}
+                  </div>
+                ) : serviceHealthSnapshots.map((service) => {
                   const heapPct = service.heapMaxBytes > 0 ? (service.heapUsedBytes / service.heapMaxBytes) * 100 : 0;
                   return (
                     <article key={service.name} className="service-health-card">
@@ -963,26 +1001,34 @@ export default function App() {
                         />
                       </div>
 
-                      <div className="component-grid">
-                        {Object.entries(service.components).map(([componentName, component]) => (
-                          <div key={componentName} className="component-card">
-                            <div className="alert-row">
-                              <strong>{componentName}</strong>
-                              <StatusBadge value={component.status} tone={mapStatusTone(component.status)} />
-                            </div>
-                            <div className="component-details">
-                              {component.details
-                                ? Object.entries(component.details).slice(0, 3).map(([detailKey, detailValue]) => (
-                                    <div key={detailKey}>
-                                      <span>{detailKey}</span>
-                                      <strong>{String(detailValue)}</strong>
-                                    </div>
-                                  ))
-                                : <span className="empty-state">No details</span>}
-                            </div>
+                      <details className="system-components">
+                        <summary>
+                          <span>Dependencies and component details</span>
+                          <span className="component-count">{Object.keys(service.components).length} components</span>
+                        </summary>
+                        {Object.keys(service.components).length ? (
+                          <div className="component-grid">
+                            {Object.entries(service.components).map(([componentName, component]) => (
+                              <div key={componentName} className="component-card">
+                                <div className="alert-row">
+                                  <strong>{componentName}</strong>
+                                  <StatusBadge value={component.status} tone={mapStatusTone(component.status)} />
+                                </div>
+                                <div className="component-details">
+                                  {component.details
+                                    ? Object.entries(component.details).slice(0, 3).map(([detailKey, detailValue]) => (
+                                        <div key={detailKey}>
+                                          <span>{detailKey}</span>
+                                          <strong>{String(detailValue)}</strong>
+                                        </div>
+                                      ))
+                                    : <span className="empty-state">No details</span>}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        ) : <div className="empty-state">No dependency details reported.</div>}
+                      </details>
                     </article>
                   );
                 })}
@@ -1003,7 +1049,7 @@ export default function App() {
                 ))}
               </div>
               <div className="alert-list">
-                {alerts.map((alert) => (
+                {alerts.length ? alerts.map((alert) => (
                   <article className={`alert-item ${alert.severity}`} key={alert.title}>
                     <div className="alert-row">
                       <strong>{alert.title}</strong>
@@ -1011,7 +1057,7 @@ export default function App() {
                     </div>
                     <p>{alert.detail}</p>
                   </article>
-                ))}
+                )) : <div className="empty-state">No active operational signals.</div>}
               </div>
             </Panel>
           </section>

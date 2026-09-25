@@ -16,7 +16,7 @@ export default function OrderBookDepth({ book }: OrderBookDepthProps) {
     <div className="book-grid">
       <div className="book-column">
         <div className="book-heading">Bid Stack</div>
-        {book.buyLadder.map((level) => (
+        {book.buyLadder.length ? book.buyLadder.map((level) => (
           <div className="depth-row" key={`bid-${level.price}`}>
             <span>{level.price.toFixed(2)}</span>
             <div className="depth-bar-wrap">
@@ -27,12 +27,12 @@ export default function OrderBookDepth({ book }: OrderBookDepthProps) {
             </div>
             <strong>{formatInteger(level.quantity)}</strong>
           </div>
-        ))}
+        )) : <div className="empty-state">No bid orders at this time.</div>}
       </div>
 
       <div className="book-column">
         <div className="book-heading">Ask Stack</div>
-        {book.sellLadder.map((level) => (
+        {book.sellLadder.length ? book.sellLadder.map((level) => (
           <div className="depth-row" key={`ask-${level.price}`}>
             <span>{level.price.toFixed(2)}</span>
             <div className="depth-bar-wrap">
@@ -43,7 +43,7 @@ export default function OrderBookDepth({ book }: OrderBookDepthProps) {
             </div>
             <strong>{formatInteger(level.quantity)}</strong>
           </div>
-        ))}
+        )) : <div className="empty-state">No ask orders at this time.</div>}
       </div>
     </div>
   );

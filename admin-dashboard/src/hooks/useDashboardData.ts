@@ -217,6 +217,7 @@ export function useDashboardData() {
   }, []);
 
   const [serviceHealthSnapshots, setServiceHealthSnapshots] = useState<ServiceHealthSnapshot[]>([]);
+  const [serviceHealthState, setServiceHealthState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     let active = true;
@@ -273,9 +274,10 @@ export function useDashboardData() {
 
         if (!active) return;
         setServiceHealthSnapshots(snapshots);
+        setServiceHealthState("ready");
       } catch {
         if (!active) return;
-        setServiceHealthSnapshots([]);
+        setServiceHealthState("error");
       }
     }
 
@@ -529,7 +531,7 @@ export function useDashboardData() {
   }
 
   function refreshDashboard(): void {
-    setState((current) => ({ ...current, pageLoading: true }));
+    setState((current) => ({ ...current, pageLoading: true, pageError: "" }));
     void Promise.all([
       dashboardApi.getUsers(),
       dashboardApi.getUserSummary(),
@@ -644,6 +646,7 @@ export function useDashboardData() {
     startSimulation,
     stopSimulation,
     serviceHealthSnapshots,
+    serviceHealthState,
     liveState: {
       orderFeed: orderFeedState,
       orderBook: orderBookState
