@@ -42,6 +42,7 @@ const userColumns: TableColumn<AdminUser & { portfolioValue: number; totalUnreal
 
 export default function App() {
   const [orderStatusFilter, setOrderStatusFilter] = useState<"ALL" | "FILLED" | "OPEN" | "REJECTED">("ALL");
+  const [orderSearch, setOrderSearch] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [simulationIntervalMs, setSimulationIntervalMs] = useState(3000);
   const [simulationOrdersPerTick, setSimulationOrdersPerTick] = useState(2);
@@ -79,12 +80,17 @@ export default function App() {
   }, [location.pathname]);
 
   const filteredOrders = useMemo(() => {
-    if (orderStatusFilter === "ALL") return state.recentOrders;
-    if (orderStatusFilter === "OPEN") {
-      return state.recentOrders.filter((order) => order.status === "PENDING" || order.status === "PARTIAL");
-    }
-    return state.recentOrders.filter((order) => order.status === orderStatusFilter);
-  }, [orderStatusFilter, state.recentOrders]);
+    const query = orderSearch.trim().toLowerCase();
+    return state.recentOrders.filter((order) => {
+      const matchesStatus = orderStatusFilter === "ALL"
+        || (orderStatusFilter === "OPEN"
+          ? order.status === "PENDING" || order.status === "PARTIAL"
+          : order.status === orderStatusFilter);
+      const matchesSearch = !query || [order.symbol, order.username, order.status, order.side, order.orderType, order.id]
+        .some((value) => value.toLowerCase().includes(query));
+      return matchesStatus && matchesSearch;
+    });
+  }, [orderSearch, orderStatusFilter, state.recentOrders]);
 
   const filteredUsers = useMemo(() => {
     const query = userSearch.trim().toLowerCase();
@@ -410,23 +416,40 @@ export default function App() {
           <section className="dashboard-grid trading-tab-grid">
             <Panel
               title="Advanced Trading Blotter"
-              subtitle="Filter recent flow by lifecycle state and scan the latest cross-user activity"
-              action={
-                <div className="filter-row">
+              subtitle="Search recent orders and narrow activity by lifecycle state"
+            >
+              <div className="blotter-toolbar">
+                <input
+                  className="table-search blotter-search"
+                  type="search"
+                  aria-label="Search orders by symbol, trader, status, side, type, or ID"
+                  placeholder="Search orders"
+                  value={orderSearch}
+                  onChange={(event) => setOrderSearch(event.target.value)}
+                />
+                <div className="filter-row" role="group" aria-label="Filter orders by status">
                   {(["ALL", "FILLED", "OPEN", "REJECTED"] as const).map((status) => (
                     <button
                       key={status}
                       className={`filter-pill button-pill ${orderStatusFilter === status ? "active" : ""}`}
                       onClick={() => setOrderStatusFilter(status)}
+                      aria-pressed={orderStatusFilter === status}
                       type="button"
                     >
                       {status}
                     </button>
                   ))}
                 </div>
-              }
-            >
-              <DataTable columns={orderColumns} rows={filteredOrders} rowKey={(row) => row.id} />
+                <span className="blotter-count" aria-live="polite">
+                  {filteredOrders.length} of {state.recentOrders.length} orders
+                </span>
+              </div>
+              <DataTable
+                columns={orderColumns}
+                rows={filteredOrders}
+                rowKey={(row) => row.id}
+                emptyMessage="No orders match this search and status filter."
+              />
             </Panel>
 
             <Panel title="Execution Monitor" subtitle="Live fills, status distribution, and throughput for the execution workflow">
