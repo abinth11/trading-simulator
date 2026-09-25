@@ -10,6 +10,7 @@ import Panel from "./components/Panel";
 import StatusBadge from "./components/StatusBadge";
 import UserDrawer from "./components/UserDrawer";
 import { useDashboardData } from "./hooks/useDashboardData";
+import { logout, useAuth } from "./services/auth";
 import { navigationItems, serviceEndpoints, type AdminOrder, type AdminUser, type NavigationTab, type SymbolActivityItem, type TableColumn } from "./types";
 import { formatBytes, formatCompactNumber, formatDurationSeconds, formatMoney, formatPlainPercent, formatSignedMoney, formatTime, mapStatusTone } from "./utils/format";
 
@@ -58,6 +59,7 @@ export default function App() {
   const [symbolSearch, setSymbolSearch] = useState("");
   const [simulationPool, setSimulationPool] = useState<string[]>([]);
   const location = useLocation();
+  const { session } = useAuth();
   const {
     state,
     metrics,
@@ -281,6 +283,14 @@ export default function App() {
               <span className="connection-dot" aria-hidden="true" />
               {liveLabel}
             </span>
+            <button
+              className="ghost-button"
+              type="button"
+              title={session ? `Signed in as ${session.user.email}` : undefined}
+              onClick={() => logout()}
+            >
+              Sign out
+            </button>
           </div>
         </header>
 

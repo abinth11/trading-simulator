@@ -29,6 +29,14 @@ spring:
     virtual:
       enabled: true
 
+# Operator account for the admin dashboard, created on startup if missing.
+# Local-dev defaults — override with ADMIN_EMAIL / ADMIN_PASSWORD, or set them blank to disable.
+admin:
+  bootstrap:
+    email: ${ADMIN_EMAIL:admin@tradingsim.dev}
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:admin12345}
+
 # JWT config — change secret in production!
 jwt:
   secret: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"

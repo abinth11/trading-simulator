@@ -99,6 +99,44 @@ button:disabled {
     linear-gradient(180deg, #081120 0%, #040914 100%);
 }
 
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  display: grid;
+  gap: 16px;
+  padding: 28px;
+}
+
+.login-card .brand-block {
+  margin-bottom: 4px;
+}
+
+.login-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.login-field .table-search {
+  width: 100%;
+  min-width: 0;
+}
+
+.login-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
 .workspace-shell {
   min-height: 100vh;
   display: grid;

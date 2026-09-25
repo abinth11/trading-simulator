@@ -19,13 +19,14 @@ import type {
   TimelinePoint,
   UserPortfolioSummary
 } from "../types";
+import { authorizedFetch, getAccessToken } from "./auth";
 
 const JSON_HEADERS: HeadersInit = {
   "Content-Type": "application/json"
 };
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: JSON_HEADERS });
+  const response = await authorizedFetch(path, { headers: JSON_HEADERS });
   if (!response.ok) {
     throw new Error(`Request failed for ${path}: ${response.status}`);
   }
@@ -33,7 +34,7 @@ async function fetchJson<T>(path: string): Promise<T> {
 }
 
 async function sendJson<TResponse, TBody>(path: string, method: "POST", body?: TBody): Promise<TResponse> {
-  const response = await fetch(path, {
+  const response = await authorizedFetch(path, {
     method,
     headers: JSON_HEADERS,
     body: body === undefined ? undefined : JSON.stringify(body)
@@ -72,8 +73,12 @@ export const dashboardApi = {
     const suffix = search ? `?${search}` : "";
     return fetchJson(`${servicePrefix}/actuator/metrics/${metricName}${suffix}`);
   },
+  // Browsers can't send headers on a WebSocket, so the admin feed takes the token as a query parameter
   openOrderFeedSocket: (orderLimit = 20, tradeLimit = 12): WebSocket =>
-    createSocket(`/order-api/ws/admin/orders?orderLimit=${orderLimit}&tradeLimit=${tradeLimit}`),
+    createSocket(
+      `/order-api/ws/admin/orders?orderLimit=${orderLimit}&tradeLimit=${tradeLimit}` +
+        `&token=${encodeURIComponent(getAccessToken() ?? "")}`
+    ),
   openOrderBookSocket: (symbol: string): WebSocket =>
     createSocket(`/engine-api/ws/engine/orderbook?symbol=${encodeURIComponent(symbol)}`)
 };

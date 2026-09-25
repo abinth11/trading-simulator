@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tradingsim.user.dto.UserDtos.*;
 import com.tradingsim.user.entity.User;
 import com.tradingsim.user.repository.UserRepository;
+import com.tradingsim.user.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -25,6 +27,7 @@ class UserServiceIntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired UserRepository userRepository;
+    @Autowired JwtService jwtService;
 
     @BeforeEach
     void setUp() {
@@ -122,5 +125,37 @@ class UserServiceIntegrationTest {
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("Validation failed"));
+    }
+
+    // ── Admin API access ──────────────────────────────────────────
+    private String accessTokenFor(User.Role role) {
+        User user = userRepository.save(User.builder()
+                .email(role.name().toLowerCase() + "@example.com")
+                .username(role.name().toLowerCase() + "user")
+                .passwordHash("unused")
+                .role(role)
+                .build());
+        return jwtService.generateAccessToken(user.getId(), user.getEmail(), role.name());
+    }
+
+    @Test
+    void adminApi_withoutToken_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/users"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void adminApi_withUserToken_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/users")
+                        .header("Authorization", "Bearer " + accessTokenFor(User.Role.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminApi_withAdminToken_returns200() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/users")
+                        .header("Authorization", "Bearer " + accessTokenFor(User.Role.ADMIN)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].role").value("ADMIN"));
     }
 }
