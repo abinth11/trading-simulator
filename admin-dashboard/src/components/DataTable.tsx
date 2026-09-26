@@ -53,13 +53,23 @@ export default function DataTable<TRow>({ columns, rows, rowKey, emptyMessage = 
   }
 
   return (
-    <div className="table-wrap">
+    <div
+      className="table-wrap"
+      role={scrollHint ? "region" : undefined}
+      aria-label={scrollHint ? "Recent orders table" : undefined}
+      aria-describedby={scrollHint ? "recent-orders-scroll-hint" : undefined}
+      tabIndex={scrollHint ? 0 : undefined}
+    >
       <table className="data-table">
         <thead>
           <tr>
             {columns.map((column) => (
               <th
                 key={String(column.key)}
+                scope="col"
+                aria-sort={column.sortable && sortKey === String(column.key)
+                  ? sortDirection === "asc" ? "ascending" : "descending"
+                  : undefined}
                 className={`${column.className ?? ""} ${column.align === "right" ? "align-right" : ""}`.trim()}
               >
                 {column.sortable ? (
@@ -69,7 +79,7 @@ export default function DataTable<TRow>({ columns, rows, rowKey, emptyMessage = 
                     type="button"
                   >
                     {column.label}
-                    <span>{sortKey === String(column.key) ? (sortDirection === "asc" ? "↑" : "↓") : "↕"}</span>
+                    <span aria-hidden="true">{sortKey === String(column.key) ? (sortDirection === "asc" ? "↑" : "↓") : "↕"}</span>
                   </button>
                 ) : (
                   column.label
@@ -100,12 +110,12 @@ export default function DataTable<TRow>({ columns, rows, rowKey, emptyMessage = 
               </tr>
             )) : (
               <tr>
-                <td className="table-empty" colSpan={columns.length + (rowAction ? 1 : 0)}>{emptyMessage}</td>
+                <td className="table-empty" role="status" aria-live="polite" colSpan={columns.length + (rowAction ? 1 : 0)}>{emptyMessage}</td>
               </tr>
             )}
         </tbody>
       </table>
-      {scrollHint ? <div className="table-scroll-hint">Swipe horizontally to see all order fields.</div> : null}
+      {scrollHint ? <div className="table-scroll-hint" id="recent-orders-scroll-hint" role="note">Swipe horizontally to see all order fields.</div> : null}
     </div>
   );
 }

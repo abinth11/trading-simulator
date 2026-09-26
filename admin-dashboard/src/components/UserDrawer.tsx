@@ -1,6 +1,7 @@
 import Panel from "./Panel";
 import StatusBadge from "./StatusBadge";
 import type { Holding } from "../types";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { formatMoney, formatPercent, formatSignedMoney, mapStatusTone } from "../utils/format";
 
 interface UserDrawerModel {
@@ -23,18 +24,64 @@ interface UserDrawerProps {
 }
 
 export default function UserDrawer({ user, loading, onClose }: UserDrawerProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      openerRef.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      closeButtonRef.current?.focus();
+      return;
+    }
+
+    openerRef.current?.focus();
+    openerRef.current = null;
+  }, [Boolean(user)]);
+
   if (!user) return null;
 
+  function handleDialogKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+      return;
+    }
+
+    if (event.key !== "Tab") return;
+    const focusable = event.currentTarget.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusable.length) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   return (
-    <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="drawer" onClick={(event) => event.stopPropagation()}>
+    <div className="drawer-backdrop" onClick={onClose} onKeyDown={handleDialogKeyDown}>
+      <section
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="user-drawer-title"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="drawer-header">
           <div>
             <div className="eyebrow">User Lens</div>
-            <h2>{user.username}</h2>
+            <h2 id="user-drawer-title">{user.username}</h2>
             <p>{user.email}</p>
           </div>
-          <button className="ghost-button" onClick={onClose}>
+          <button ref={closeButtonRef} className="ghost-button" onClick={onClose} type="button">
             Close
           </button>
         </div>
@@ -83,7 +130,7 @@ export default function UserDrawer({ user, loading, onClose }: UserDrawerProps) 
             <div className="empty-state">No holdings for this account.</div>
           )}
         </Panel>
-      </aside>
+      </section>
     </div>
   );
 }

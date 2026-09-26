@@ -29,7 +29,17 @@ export default function MarketActivityChart({ data }: MarketActivityChartProps) 
 
   return (
     <div className="activity-chart">
-      <svg viewBox={`0 0 ${width} ${height}`} className="chart-svg" role="img" aria-label="Trading activity chart">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="chart-svg"
+        role="img"
+        aria-labelledby="market-chart-title market-chart-description"
+      >
+        <title id="market-chart-title">Market activity over time</title>
+        <desc id="market-chart-description">
+          Orders, fills, and traded volume are plotted over recent intervals.
+          {last ? ` Latest interval ${last.bucket}: ${formatCompactNumber(last.orders)} orders, ${formatCompactNumber(last.fills)} fills, and ${formatCompactNumber(last.volume)} volume.` : " No activity data is currently available."}
+        </desc>
         <defs>
           <linearGradient id="ordersGradient" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="rgba(76, 160, 255, 0.9)" />
@@ -54,9 +64,9 @@ export default function MarketActivityChart({ data }: MarketActivityChartProps) 
       </svg>
 
       <div className="chart-legend">
-        <span><i className="legend orders" />Orders</span>
-        <span><i className="legend fills" />Fills</span>
-        <span><i className="legend volume" />Volume</span>
+        <span><i className="legend orders" aria-hidden="true" />Orders</span>
+        <span><i className="legend fills" aria-hidden="true" />Fills</span>
+        <span><i className="legend volume" aria-hidden="true" />Volume</span>
       </div>
 
       {last ? (

@@ -124,9 +124,7 @@ export function useDashboardData() {
           },
           selectedUser: current.selectedUser
             ? users.find((user) => user.id === current.selectedUser?.id) ?? null
-            : current.lastUpdated
-              ? null
-              : (users[0] ?? null),
+            : null,
           pageLoading: false,
           pageError: "",
           lastUpdated: new Date().toISOString()

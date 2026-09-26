@@ -212,7 +212,7 @@ export default function App() {
     <div className="workspace-shell">
       <aside className="sidebar">
         <div className="brand-block">
-          <div className="brand-mark">TS</div>
+          <div className="brand-mark" aria-hidden="true">TS</div>
           <div>
             <h1>Trading Simulator</h1>
             <p>Operator Workstation</p>
@@ -220,7 +220,7 @@ export default function App() {
         </div>
 
         <div className="nav-group-label">Navigation</div>
-        <nav className="nav-list">
+        <nav className="nav-list" aria-label="Main navigation">
           {navigationItems.map((item, index) => (
             <NavLink
               key={item.id}
@@ -257,7 +257,7 @@ export default function App() {
             <button
               className="ghost-button theme-toggle"
               type="button"
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              aria-label={`Use ${theme === "dark" ? "light" : "dark"} theme`}
               aria-pressed={theme === "light"}
               onClick={() => {
                 const nextTheme = theme === "dark" ? "light" : "dark";
@@ -747,6 +747,7 @@ export default function App() {
               action={
                 <input
                   className="table-search"
+                  aria-label="Search symbols by ticker"
                   placeholder="Search symbols"
                   value={symbolSearch}
                   onChange={(e) => setSymbolSearch(e.target.value)}
@@ -768,6 +769,8 @@ export default function App() {
                       key={symbol}
                       type="button"
                       className={`symbol-registry-card${isActive ? " is-active" : ""}${inPool ? " in-pool" : ""}`}
+                      aria-pressed={inPool}
+                      aria-label={`${inPool ? "Remove" : "Add"} ${symbol} ${inPool ? "from" : "to"} simulation pool`}
                       onClick={() =>
                         setSimulationPool((prev) =>
                           prev.includes(symbol) ? prev.filter((s) => s !== symbol) : [...prev, symbol]
@@ -825,6 +828,7 @@ export default function App() {
                     <button
                       type="button"
                       disabled={simulationStatus?.running}
+                      aria-label={`Remove ${symbol} from simulation pool`}
                       onClick={() => setSimulationPool((prev) => prev.filter((s) => s !== symbol))}
                     >
                       ×

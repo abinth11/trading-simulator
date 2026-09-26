@@ -27,7 +27,7 @@ export default function LoginScreen({ notice }: LoginScreenProps) {
     <main className="login-shell">
       <form className="panel login-card" onSubmit={(event) => void handleSubmit(event)}>
         <div className="brand-block">
-          <div className="brand-mark">TS</div>
+          <div className="brand-mark" aria-hidden="true">TS</div>
           <div>
             <h1>Trading Simulator</h1>
             <p>Operator Workstation</p>
