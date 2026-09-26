@@ -19,6 +19,8 @@ import { buildDerivedOrderBook, formatCompactNumber, formatInteger, formatMoney,
 
 const emptyBook: DerivedOrderBook = buildDerivedOrderBook("N/A", 0, 0, 0, 0);
 
+export type DashboardData = ReturnType<typeof useDashboardData>;
+
 export function useDashboardData() {
   const [orderFeedState, setOrderFeedState] = useState<LiveConnectionState>("connecting");
   const [orderBookState, setOrderBookState] = useState<LiveConnectionState>("idle");
