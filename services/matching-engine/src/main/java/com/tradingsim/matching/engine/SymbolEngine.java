@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * SymbolEngine wraps an OrderBook and processes orders on a single dedicated thread.
@@ -29,6 +30,7 @@ public class SymbolEngine implements Runnable {
     private final OrderBook orderBook;
     private final BlockingQueue<EngineCommand> commandQueue;
     private final EngineEventHandler eventHandler;
+    private final AtomicReference<OrderBookSnapshot> snapshot;
 
     // Order IDs this engine has already added or cancelled (engine thread only). Kafka delivery is
     // at-least-once and the startup rebuild can overlap redelivery, so the same order may be
@@ -46,6 +48,7 @@ public class SymbolEngine implements Runnable {
         this.orderBook = new OrderBook(symbol);
         this.commandQueue = new LinkedBlockingQueue<>();
         this.eventHandler = eventHandler;
+        this.snapshot = new AtomicReference<>(OrderBookSnapshot.from(orderBook));
     }
 
     // ── Public API (called from other threads) ────────────────────
@@ -63,8 +66,13 @@ public class SymbolEngine implements Runnable {
         commandQueue.offer(new EngineCommand.Shutdown());
     }
 
+    public OrderBookSnapshot getSnapshot() {
+        return snapshot.get();
+    }
+
+    /** Engine-thread only. Tests drain the queue on the calling thread before reading. */
     public OrderBook getOrderBook() {
-        return orderBook; // read-only snapshot use — safe for metrics
+        return orderBook;
     }
 
     // ── Engine thread loop ────────────────────────────────────────
@@ -95,6 +103,7 @@ public class SymbolEngine implements Runnable {
                     }
                     // Trades are published first so a MARKET order's fills land before its remainder is cancelled
                     result.cancelled().forEach(eventHandler::onOrderCancelled);
+                    publishSnapshot();
                 }
 
                 if (cmd instanceof EngineCommand.CancelOrder cancelCmd) {
@@ -105,6 +114,7 @@ public class SymbolEngine implements Runnable {
                     log.debug("Cancel order {}: {}", orderId, removed ? "removed from book" : "not in book");
                     // Either way the order can no longer trade, so the cancel can be finalised
                     eventHandler.onCancelRequestProcessed(orderId);
+                    publishSnapshot();
                 }
 
             } catch (InterruptedException e) {
@@ -118,6 +128,10 @@ public class SymbolEngine implements Runnable {
         }
 
         log.info("SymbolEngine stopped for {}", symbol);
+    }
+
+    private void publishSnapshot() {
+        snapshot.set(OrderBookSnapshot.from(orderBook));
     }
 
     // ── Command sealed interface (ADT pattern) ────────────────────

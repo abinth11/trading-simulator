@@ -33,8 +33,8 @@ public class MatchingEngineRouter {
         getOrCreateEngine(symbol).cancelOrder(orderId);
     }
 
-    public Optional<OrderBook> getOrderBook(String symbol) {
-        return Optional.ofNullable(engines.get(symbol)).map(SymbolEngine::getOrderBook);
+    public Optional<OrderBookSnapshot> getSnapshot(String symbol) {
+        return Optional.ofNullable(engines.get(symbol)).map(SymbolEngine::getSnapshot);
     }
 
     public Set<String> getActiveSymbols() {

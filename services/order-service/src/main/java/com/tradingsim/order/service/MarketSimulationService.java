@@ -149,8 +149,7 @@ public class MarketSimulationService {
             BigDecimal referencePrice = referencePriceService.resolve(symbol);
             BigDecimal midpoint = movePrice(referencePrice);
             BigDecimal priceStep = midpoint.multiply(randomBetween("0.0002", "0.0008")).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal sellPrice = midpoint.subtract(priceStep).max(new BigDecimal("0.01")).setScale(2, RoundingMode.HALF_UP);
-            BigDecimal buyPrice = midpoint.add(priceStep).setScale(2, RoundingMode.HALF_UP);
+            Spread spread = twoSidedSpread(midpoint, priceStep);
             BigDecimal quantity = randomQuantity(symbol);
 
             BotSeed buyer = bots.get(ThreadLocalRandom.current().nextInt(bots.size()));
@@ -159,8 +158,8 @@ public class MarketSimulationService {
                     .findAny()
                     .orElse(bots.get(0));
 
-            submitOrder(buyer.id(), symbol, Side.BUY, buyPrice, quantity);
-            submitOrder(seller.id(), symbol, Side.SELL, sellPrice, quantity);
+            submitOrder(buyer.id(), symbol, Side.BUY, spread.bid(), quantity);
+            submitOrder(seller.id(), symbol, Side.SELL, spread.ask(), quantity);
         }
 
         ticksExecuted.incrementAndGet();
@@ -221,8 +220,9 @@ public class MarketSimulationService {
         for (String symbol : symbols) {
             BigDecimal ref = nseMarketDataService.getBootstrapPrice(symbol);
             BigDecimal step = ref.multiply(new BigDecimal("0.0005")).setScale(2, RoundingMode.HALF_UP);
-            submitOrder(buyer.id(), symbol, Side.BUY,  ref.add(step),      new BigDecimal("1.000000"));
-            submitOrder(seller.id(), symbol, Side.SELL, ref.subtract(step), new BigDecimal("1.000000"));
+            Spread spread = twoSidedSpread(ref, step);
+            submitOrder(buyer.id(), symbol, Side.BUY, spread.bid(), new BigDecimal("1.000000"));
+            submitOrder(seller.id(), symbol, Side.SELL, spread.ask(), new BigDecimal("1.000000"));
         }
         log.info("Prewarmed {} order books in the matching engine", symbols.size());
     }
@@ -264,6 +264,19 @@ public class MarketSimulationService {
         return symbols.get(ThreadLocalRandom.current().nextInt(symbols.size()));
     }
 
+    /**
+     * Bid below the midpoint, ask above it, so the pair rests instead of matching.
+     * A buy above the sell would cross immediately and leave the book empty.
+     */
+    static Spread twoSidedSpread(BigDecimal midpoint, BigDecimal priceStep) {
+        BigDecimal bid = midpoint.subtract(priceStep).max(new BigDecimal("0.01")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal ask = midpoint.add(priceStep).setScale(2, RoundingMode.HALF_UP);
+        if (ask.compareTo(bid) <= 0) {
+            ask = bid.add(new BigDecimal("0.01"));
+        }
+        return new Spread(bid, ask);
+    }
+
     private static BigDecimal movePrice(BigDecimal referencePrice) {
         BigDecimal drift = randomBetween("-0.0030", "0.0030");
         return referencePrice.multiply(BigDecimal.ONE.add(drift)).setScale(2, RoundingMode.HALF_UP);
@@ -288,4 +301,6 @@ public class MarketSimulationService {
     private record SimulationConfig(long intervalMs, int ordersPerTick, List<String> symbols) {}
 
     private record BotSeed(UUID id, String username, String email) {}
+
+    record Spread(BigDecimal bid, BigDecimal ask) {}
 }
