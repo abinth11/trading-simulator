@@ -3,6 +3,7 @@ package com.tradingsim.matching.publisher;
 import com.tradingsim.matching.engine.EngineEventHandler;
 import com.tradingsim.matching.model.Order;
 import com.tradingsim.matching.model.TradeEvent;
+import com.tradingsim.matching.outbox.OutboxWriter;
 import com.tradingsim.matching.publisher.EngineEvents.PriceUpdatedEvent;
 import com.tradingsim.matching.publisher.EngineEvents.TradeExecutedEvent;
 import lombok.RequiredArgsConstructor;
@@ -10,9 +11,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -23,7 +25,7 @@ import java.util.List;
 @Slf4j
 public class TradeEventPublisher implements EngineEventHandler {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final OutboxWriter outboxWriter;
     private final StringRedisTemplate redisTemplate;
     private final JdbcTemplate jdbcTemplate;
 
@@ -34,11 +36,12 @@ public class TradeEventPublisher implements EngineEventHandler {
     private String priceUpdatedTopic;
 
     /**
-     * Called by MatchingEngineRouter after each batch of trades.
+     * Called by the symbol engine after each batch of trades, in one transaction:
      * 1. Persist each trade to the trades table
-     * 2. Update order statuses in DB
-     * 3. Publish TradeExecuted to Kafka (Portfolio + Logger consume this)
-     * 4. Publish PriceUpdated to Kafka + Redis (Market Data + WS consume this)
+     * 2. Update order fills in DB
+     * 3. Queue TradeExecuted (Portfolio consumes this) and PriceUpdated in the outbox
+     * After commit, the last price is cached in Redis. Nothing leaves the service if the
+     * transaction rolls back.
      */
     @Override
     @Transactional
@@ -51,8 +54,8 @@ public class TradeEventPublisher implements EngineEventHandler {
             updateOrderFill(trade.getBuyOrderId(), trade.getQuantity());
             updateOrderFill(trade.getSellOrderId(), trade.getQuantity());
 
-            // 3. Publish TradeExecuted event
-            var tradeEvent = new TradeExecutedEvent(
+            // 3. Queue TradeExecuted and PriceUpdated events
+            outboxWriter.enqueue(tradeExecutedTopic, trade.getSymbol(), new TradeExecutedEvent(
                     trade.getTradeId(),
                     trade.getBuyOrderId(),
                     trade.getSellOrderId(),
@@ -62,34 +65,27 @@ public class TradeEventPublisher implements EngineEventHandler {
                     trade.getPrice(),
                     trade.getQuantity(),
                     trade.getExecutedAt()
-            );
+            ));
 
-            kafkaTemplate.send(tradeExecutedTopic, trade.getSymbol(), tradeEvent)
-                    .whenComplete((r, ex) -> {
-                        if (ex != null) log.error("Failed to publish TradeExecuted: {}", ex.getMessage());
-                        else log.debug("Published TradeExecuted: {}", trade.getTradeId());
-                    });
-
-            // 4. Update last price in Redis (fast read for WS and order validation)
-            String priceKey = "price:last:" + trade.getSymbol();
-            redisTemplate.opsForValue().set(priceKey, trade.getPrice().toPlainString());
-
-            // 5. Publish PriceUpdated event
-            var priceEvent = new PriceUpdatedEvent(
+            outboxWriter.enqueue(priceUpdatedTopic, trade.getSymbol(), new PriceUpdatedEvent(
                     trade.getSymbol(),
                     trade.getPrice(),
                     trade.getQuantity(),
                     Instant.now()
-            );
+            ));
 
-            kafkaTemplate.send(priceUpdatedTopic, trade.getSymbol(), priceEvent)
-                    .whenComplete((r, ex) -> {
-                        if (ex != null) log.error("Failed to publish PriceUpdated: {}", ex.getMessage());
-                    });
-
-            log.info("Trade published: {} {} @ {} qty={}",
+            log.info("Trade recorded: {} {} @ {} qty={}",
                     trade.getTradeId(), trade.getSymbol(), trade.getPrice(), trade.getQuantity());
         }
+
+        // 4. Cache the last price for order validation and the WS feed — only once the trades are real
+        TradeEvent last = trades.get(trades.size() - 1);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                redisTemplate.opsForValue().set("price:last:" + last.getSymbol(), last.getPrice().toPlainString());
+            }
+        });
     }
 
     /**

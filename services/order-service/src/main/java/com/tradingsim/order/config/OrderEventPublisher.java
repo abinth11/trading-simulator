@@ -1,21 +1,23 @@
 package com.tradingsim.order.config;
 
+import com.tradingsim.order.outbox.OutboxWriter;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Order events for the matching engine. Both methods must run inside the transaction that
+ * saves the order change: events go through the outbox and reach Kafka only after it commits.
+ */
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class OrderEventPublisher {
 
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final OutboxWriter outboxWriter;
 
     @Value("${kafka.topics.order-placed}")
     private String orderPlacedTopic;
@@ -24,20 +26,12 @@ public class OrderEventPublisher {
     private String orderCancelledTopic;
 
     public void publishOrderPlaced(OrderPlacedEvent event) {
-        kafkaTemplate.send(orderPlacedTopic, event.orderId().toString(), event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) log.error("Failed to publish OrderPlaced: {}", ex.getMessage());
-                    else log.debug("Published OrderPlaced: {}", event.orderId());
-                });
+        outboxWriter.enqueue(orderPlacedTopic, event.orderId().toString(), event);
     }
 
     public void publishOrderCancelled(UUID orderId, UUID userId, String symbol) {
         var event = new OrderCancelledEvent(orderId, userId, symbol, Instant.now());
-        kafkaTemplate.send(orderCancelledTopic, orderId.toString(), event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) log.error("Failed to publish OrderCancelled: {}", ex.getMessage());
-                    else log.debug("Published OrderCancelled: {}", orderId);
-                });
+        outboxWriter.enqueue(orderCancelledTopic, orderId.toString(), event);
     }
 
     public record OrderPlacedEvent(

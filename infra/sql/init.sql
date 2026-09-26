@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS trade_settlements (
     settled_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ── OUTBOX ─────────────────────────────────────────────────────────
+-- Kafka events waiting to be published. Services insert them in the same transaction as the
+-- change they describe; each service's relay publishes its own rows after commit, then deletes them.
+CREATE TABLE IF NOT EXISTS outbox_events (
+    id         BIGSERIAL PRIMARY KEY,               -- publish order
+    producer   VARCHAR(40)  NOT NULL,               -- service that owns the row
+    topic      VARCHAR(100) NOT NULL,
+    event_key  VARCHAR(100),
+    payload    TEXT         NOT NULL,               -- JSON
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_producer ON outbox_events(producer, id);
+
 -- ── PORTFOLIO HOLDINGS ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS portfolio_holdings (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
