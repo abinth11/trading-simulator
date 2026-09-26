@@ -76,6 +76,8 @@ public class Order {
     public enum OrderType { LIMIT, MARKET }
 
     public enum OrderStatus {
-        PENDING, PARTIAL, FILLED, CANCELLED, REJECTED
+        PENDING, PARTIAL, FILLED,
+        CANCELLING, // cancel requested; still open until the matching engine confirms
+        CANCELLED, REJECTED
     }
 }

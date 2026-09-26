@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS orders (
     price_cap       DECIMAL(18, 2),                      -- worst fill price: limit price, or MARKET protection cap
     quantity        DECIMAL(18, 6) NOT NULL,
     filled_quantity DECIMAL(18, 6) NOT NULL DEFAULT 0,
-    status          VARCHAR(10) NOT NULL DEFAULT 'PENDING', -- PENDING | PARTIAL | FILLED | CANCELLED | REJECTED
+    status          VARCHAR(10) NOT NULL DEFAULT 'PENDING', -- PENDING | PARTIAL | FILLED | CANCELLING | CANCELLED | REJECTED
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_symbol   ON orders(symbol);
 CREATE INDEX IF NOT EXISTS idx_orders_status   ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created  ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_open_by_user
-    ON orders(user_id, side, symbol) WHERE status IN ('PENDING', 'PARTIAL');
+    ON orders(user_id, side, symbol) WHERE status IN ('PENDING', 'PARTIAL', 'CANCELLING');
 
 -- ── TRADES ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trades (

@@ -81,7 +81,7 @@ public class AdminOrderService {
     public AdminOrderSummaryResponse getSummary() {
         Long totalOrders = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM orders", Long.class);
         Long openOrders = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM orders WHERE status IN ('PENDING', 'PARTIAL')", Long.class);
+                "SELECT COUNT(*) FROM orders WHERE status IN ('PENDING', 'PARTIAL', 'CANCELLING')", Long.class);
         Long filledOrders = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM orders WHERE status = 'FILLED'", Long.class);
         Long cancelledOrders = jdbcTemplate.queryForObject(

@@ -22,6 +22,9 @@ import java.util.UUID;
  *                      − Σ open SELL orders  (remaining qty)
  *                      − Σ unsettled SELL trades (qty)
  *
+ * Open means PENDING, PARTIAL or CANCELLING — a cancelling order can still fill until the engine
+ * confirms the cancel, so it keeps its reservation until then.
+ *
  * A fill moves value from "open order" to "unsettled trade" (engine transaction), and settlement
  * moves it from "unsettled trade" into cash_balance / holdings (portfolio transaction). Each step
  * is atomic, so the reservation is always consistent and needs no release bookkeeping.
@@ -47,7 +50,7 @@ public class BalanceService {
                      - COALESCE((SELECT SUM(COALESCE(o.price_cap, o.price) * (o.quantity - o.filled_quantity))
                                  FROM orders o
                                  WHERE o.user_id = u.id AND o.side = 'BUY'
-                                   AND o.status IN ('PENDING', 'PARTIAL')), 0)
+                                   AND o.status IN ('PENDING', 'PARTIAL', 'CANCELLING')), 0)
                      - COALESCE((SELECT SUM(t.price * t.quantity)
                                  FROM trades t
                                  WHERE t.buyer_id = u.id
@@ -67,7 +70,7 @@ public class BalanceService {
                      - COALESCE((SELECT SUM(o.quantity - o.filled_quantity)
                                  FROM orders o
                                  WHERE o.user_id = ? AND o.symbol = ? AND o.side = 'SELL'
-                                   AND o.status IN ('PENDING', 'PARTIAL')), 0)
+                                   AND o.status IN ('PENDING', 'PARTIAL', 'CANCELLING')), 0)
                      - COALESCE((SELECT SUM(t.quantity)
                                  FROM trades t
                                  WHERE t.seller_id = ? AND t.symbol = ?

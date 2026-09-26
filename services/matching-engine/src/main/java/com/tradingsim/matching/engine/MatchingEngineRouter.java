@@ -28,12 +28,9 @@ public class MatchingEngineRouter {
     }
 
     public void cancelOrder(String symbol, UUID orderId) {
-        SymbolEngine engine = engines.get(symbol);
-        if (engine == null) {
-            log.warn("Cancel request for unknown symbol: {}", symbol);
-            return;
-        }
-        engine.cancelOrder(orderId);
+        // Always route through the symbol's engine, even a new one: the cancel must be finalised,
+        // and the engine thread orders it against any AddOrder for the same order
+        getOrCreateEngine(symbol).cancelOrder(orderId);
     }
 
     public Optional<OrderBook> getOrderBook(String symbol) {

@@ -16,9 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -98,11 +100,27 @@ public class TradeEventPublisher implements EngineEventHandler {
                 UPDATE orders
                 SET status = 'CANCELLED',
                     updated_at = NOW()
-                WHERE id = ? AND status IN ('PENDING', 'PARTIAL')
+                WHERE id = ? AND status IN ('PENDING', 'PARTIAL', 'CANCELLING')
                 """, order.getId());
 
         log.info("{} order {} cancelled by engine: filled {} of {}",
                 order.getType(), order.getId(), order.getFilledQuantity(), order.getQuantity());
+    }
+
+    /**
+     * Completes a user cancel. Until now the order stayed CANCELLING, keeping its funds reserved in
+     * case a fill was already queued. If it filled completely first it is FILLED and stays FILLED.
+     */
+    @Override
+    public void onCancelRequestProcessed(UUID orderId) {
+        int updated = jdbcTemplate.update("""
+                UPDATE orders
+                SET status = 'CANCELLED',
+                    updated_at = NOW()
+                WHERE id = ? AND status = 'CANCELLING'
+                """, orderId);
+
+        log.info("Cancel for order {} {}", orderId, updated == 1 ? "completed" : "had nothing left to cancel");
     }
 
     private void persistTrade(TradeEvent trade) {
@@ -123,15 +141,15 @@ public class TradeEventPublisher implements EngineEventHandler {
         );
     }
 
-    private void updateOrderFill(java.util.UUID orderId, java.math.BigDecimal qty) {
-        // A fill that was already queued when the user cancelled still records its quantity,
-        // but must not revive the order — an open status would reserve funds again.
+    private void updateOrderFill(UUID orderId, BigDecimal qty) {
+        // A fill that lands while a cancel is in flight records its quantity but keeps the
+        // cancel pending — unless it completes the order, in which case there's nothing to cancel.
         jdbcTemplate.update("""
                 UPDATE orders
                 SET filled_quantity = filled_quantity + ?,
                     status = CASE
-                        WHEN status = 'CANCELLED' THEN 'CANCELLED'
                         WHEN filled_quantity + ? >= quantity THEN 'FILLED'
+                        WHEN status IN ('CANCELLING', 'CANCELLED') THEN status
                         ELSE 'PARTIAL'
                     END,
                     updated_at = NOW()

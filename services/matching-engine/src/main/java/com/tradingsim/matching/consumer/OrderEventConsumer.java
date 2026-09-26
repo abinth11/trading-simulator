@@ -7,14 +7,14 @@ import com.tradingsim.matching.model.Order.OrderType;
 import com.tradingsim.matching.model.Order.Side;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.Acknowledgment;
-import org.springframework.kafka.support.KafkaHeaders;
-import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -22,6 +22,7 @@ import java.time.Instant;
 public class OrderEventConsumer {
 
     private final MatchingEngineRouter router;
+    private final JdbcTemplate jdbcTemplate;
 
     @KafkaListener(
             topics = "${kafka.topics.order-placed}",
@@ -31,6 +32,14 @@ public class OrderEventConsumer {
     public void onOrderPlaced(OrderPlacedEvent event) {
         log.info("Received OrderPlaced: {} {} {} @ {}",
                 event.getOrderId(), event.getSide(), event.getSymbol(), event.getPrice());
+
+        // Events are published only after the order commits, so its row is authoritative.
+        // Anything but PENDING means a redelivery of an order already handled, or one being cancelled.
+        String status = currentStatus(event.getOrderId());
+        if (!"PENDING".equals(status)) {
+            log.info("Skipping OrderPlaced {}: order is {}", event.getOrderId(), status == null ? "unknown" : status);
+            return;
+        }
 
         Order order = Order.builder()
                 .id(event.getOrderId())
@@ -58,5 +67,11 @@ public class OrderEventConsumer {
     public void onOrderCancelled(OrderCancelledEvent event) {
         log.info("Received OrderCancelled: {} symbol={}", event.getOrderId(), event.getSymbol());
         router.cancelOrder(event.getSymbol(), event.getOrderId());
+    }
+
+    private String currentStatus(UUID orderId) {
+        List<String> status = jdbcTemplate.queryForList(
+                "SELECT status FROM orders WHERE id = ?", String.class, orderId);
+        return status.isEmpty() ? null : status.get(0);
     }
 }

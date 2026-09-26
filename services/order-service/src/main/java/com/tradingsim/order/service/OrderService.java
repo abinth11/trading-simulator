@@ -122,12 +122,20 @@ public class OrderService {
         if (order.getStatus() == OrderStatus.CANCELLED) {
             throw new ValidationException("Order is already cancelled");
         }
+        if (order.getStatus() == OrderStatus.CANCELLING) {
+            throw new ValidationException("Order is already being cancelled");
+        }
+        if (order.getStatus() == OrderStatus.REJECTED) {
+            throw new ValidationException("Cannot cancel a rejected order");
+        }
 
-        order.setStatus(OrderStatus.CANCELLED);
+        // The engine may still fill this order before it sees the cancel, so it stays open — and its
+        // funds reserved — until the engine confirms (CANCELLED) or the fill completes it (FILLED)
+        order.setStatus(OrderStatus.CANCELLING);
         order = orderRepository.save(order);
 
         eventPublisher.publishOrderCancelled(orderId, userId, order.getSymbol());
-        log.info("Order cancelled: {}", orderId);
+        log.info("Order cancel requested: {}", orderId);
 
         return OrderResponse.from(order);
     }

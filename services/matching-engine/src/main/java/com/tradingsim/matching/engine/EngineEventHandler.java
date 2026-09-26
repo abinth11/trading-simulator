@@ -4,6 +4,7 @@ import com.tradingsim.matching.model.Order;
 import com.tradingsim.matching.model.TradeEvent;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Receives the outcomes of matching from a SymbolEngine thread.
@@ -19,4 +20,10 @@ public interface EngineEventHandler {
      * or a resting order removed by self-trade prevention.
      */
     void onOrderCancelled(Order order);
+
+    /**
+     * The engine processed a user's cancel request: the order was removed from the book, or was
+     * never in it (already filled, or not yet arrived — a late arrival will be ignored).
+     */
+    void onCancelRequestProcessed(UUID orderId);
 }

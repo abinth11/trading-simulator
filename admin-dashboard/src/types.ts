@@ -58,7 +58,7 @@ export interface AdminOrder {
   quantity: number;
   filledQuantity: number;
   remainingQuantity: number;
-  status: "PENDING" | "PARTIAL" | "FILLED" | "CANCELLED" | "REJECTED" | string;
+  status: "PENDING" | "PARTIAL" | "FILLED" | "CANCELLING" | "CANCELLED" | "REJECTED" | string;
   createdAt: string;
   updatedAt: string;
 }

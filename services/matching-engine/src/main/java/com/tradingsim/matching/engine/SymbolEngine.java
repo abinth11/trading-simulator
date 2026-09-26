@@ -3,6 +3,10 @@ package com.tradingsim.matching.engine;
 import com.tradingsim.matching.model.Order;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -25,7 +29,17 @@ public class SymbolEngine implements Runnable {
     private final OrderBook orderBook;
     private final BlockingQueue<EngineCommand> commandQueue;
     private final EngineEventHandler eventHandler;
-    private volatile boolean running = true;
+
+    // Order IDs this engine has already added or cancelled (engine thread only). Kafka delivery is
+    // at-least-once and the startup rebuild can overlap redelivery, so the same order may be
+    // submitted twice — sometimes while the first copy is still queued. Bounded so it can't grow forever.
+    private static final int SEEN_ORDER_CAPACITY = 100_000;
+    private final Set<UUID> seenOrderIds = Collections.newSetFromMap(new LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<UUID, Boolean> eldest) {
+            return size() > SEEN_ORDER_CAPACITY;
+        }
+    });
 
     public SymbolEngine(String symbol, EngineEventHandler eventHandler) {
         this.symbol = symbol;
@@ -44,9 +58,9 @@ public class SymbolEngine implements Runnable {
         commandQueue.offer(new EngineCommand.CancelOrder(orderId));
     }
 
+    /** Stops after the commands already queued have been processed. */
     public void shutdown() {
-        running = false;
-        commandQueue.offer(new EngineCommand.Shutdown()); // unblock the queue
+        commandQueue.offer(new EngineCommand.Shutdown());
     }
 
     public OrderBook getOrderBook() {
@@ -59,7 +73,7 @@ public class SymbolEngine implements Runnable {
     public void run() {
         log.info("SymbolEngine started for {}", symbol);
 
-        while (running) {
+        while (true) {
             try {
                 EngineCommand cmd = commandQueue.take(); // blocks until an order arrives
 
@@ -69,7 +83,13 @@ public class SymbolEngine implements Runnable {
                 }
 
                 if (cmd instanceof EngineCommand.AddOrder addCmd) {
-                    MatchResult result = orderBook.addOrder(addCmd.order());
+                    Order order = addCmd.order();
+                    if (!seenOrderIds.add(order.getId())) {
+                        log.debug("Ignoring duplicate or already-cancelled order {}", order.getId());
+                        continue;
+                    }
+
+                    MatchResult result = orderBook.addOrder(order);
                     if (!result.trades().isEmpty()) {
                         eventHandler.onTrades(result.trades()); // publish to event bus
                     }
@@ -78,8 +98,13 @@ public class SymbolEngine implements Runnable {
                 }
 
                 if (cmd instanceof EngineCommand.CancelOrder cancelCmd) {
-                    boolean cancelled = orderBook.cancelOrder(cancelCmd.orderId());
-                    log.debug("Cancel order {}: {}", cancelCmd.orderId(), cancelled ? "OK" : "NOT_FOUND");
+                    UUID orderId = cancelCmd.orderId();
+                    boolean removed = orderBook.cancelOrder(orderId);
+                    // If the order hasn't arrived yet, remembering it makes the late AddOrder a no-op
+                    seenOrderIds.add(orderId);
+                    log.debug("Cancel order {}: {}", orderId, removed ? "removed from book" : "not in book");
+                    // Either way the order can no longer trade, so the cancel can be finalised
+                    eventHandler.onCancelRequestProcessed(orderId);
                 }
 
             } catch (InterruptedException e) {

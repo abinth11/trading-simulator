@@ -68,7 +68,7 @@ export function formatDate(value: string): string {
 export function mapStatusTone(status: string): Tone {
   const value = status.toUpperCase();
   if (value === "FILLED" || value === "UP" || value === "ACTIVE") return "positive";
-  if (value === "PARTIAL" || value === "PENDING" || value === "MARKET" || value === "BOT") return "warning";
+  if (value === "PARTIAL" || value === "PENDING" || value === "CANCELLING" || value === "MARKET" || value === "BOT") return "warning";
   if (value === "REJECTED" || value === "CANCELLED" || value === "SELL" || value === "DOWN" || value === "INACTIVE") return "critical";
   return "neutral";
 }

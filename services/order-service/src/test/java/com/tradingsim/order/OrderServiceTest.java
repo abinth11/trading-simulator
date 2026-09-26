@@ -23,6 +23,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -139,5 +140,38 @@ class OrderServiceTest {
 
         assertThat(publishedEvent().price()).isEqualByComparingTo("1234.50");
         verifyNoInteractions(referencePriceService);
+    }
+
+    // ── Cancel ────────────────────────────────────────────────────
+    private Order existingOrder(Order.OrderStatus status) {
+        Order order = Order.builder()
+                .id(UUID.randomUUID()).userId(userId).symbol("INFY")
+                .side(Side.BUY).orderType(OrderType.LIMIT)
+                .price(new BigDecimal("100")).priceCap(new BigDecimal("100"))
+                .quantity(new BigDecimal("5")).status(status)
+                .build();
+        when(orderRepository.findByIdAndUserId(order.getId(), userId)).thenReturn(Optional.of(order));
+        return order;
+    }
+
+    @Test
+    void cancel_marksOrderCancellingUntilEngineConfirms() {
+        Order order = existingOrder(Order.OrderStatus.PARTIAL);
+        when(orderRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        var response = orderService.cancelOrder(order.getId(), userId);
+
+        // Still open, so its funds stay reserved until the engine finalises the cancel
+        assertThat(response.getStatus()).isEqualTo(Order.OrderStatus.CANCELLING);
+        verify(eventPublisher).publishOrderCancelled(order.getId(), userId, "INFY");
+    }
+
+    @Test
+    void cancel_ofOrderAlreadyCancelling_isRejected() {
+        Order order = existingOrder(Order.OrderStatus.CANCELLING);
+
+        assertThatThrownBy(() -> orderService.cancelOrder(order.getId(), userId))
+                .isInstanceOf(ValidationException.class);
+        verifyNoInteractions(eventPublisher);
     }
 }
